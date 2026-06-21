@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BANG_Toolbox</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Content -->
+  <main class="content">
+
+    <!-- Green Null + Anchor Point -->
+    <div class="tool-row">
+
+      <button class="null-btn" id="btn-create-green-null">
+        <svg class="null-btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="10" y1="6" x2="10" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="6" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="null-btn__label">Null</span>
+      </button>
+
+      <div class="ap-widget">
+
+        <button class="ap-btn" data-h="0"   data-v="0"   title="Top Left">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M2,2 L9,2 L2,9 Z"/></svg>
+        </button>
+        <button class="ap-btn" data-h="0.5" data-v="0"   title="Top Center">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M8,2 L13,10 L3,10 Z"/></svg>
+        </button>
+        <button class="ap-btn" data-h="1"   data-v="0"   title="Top Right">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M14,2 L7,2 L14,9 Z"/></svg>
+        </button>
+
+        <button class="ap-btn" data-h="0"   data-v="0.5" title="Middle Left">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M2,8 L10,3 L10,13 Z"/></svg>
+        </button>
+        <button class="ap-btn ap-btn--center" data-h="0.5" data-v="0.5" title="Center">
+          <svg class="ap-icon" viewBox="0 0 16 16" fill="none">
+            <line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="ap-btn" data-h="1"   data-v="0.5" title="Middle Right">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M14,8 L6,3 L6,13 Z"/></svg>
+        </button>
+
+        <button class="ap-btn" data-h="0"   data-v="1"   title="Bottom Left">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M2,14 L2,7 L9,14 Z"/></svg>
+        </button>
+        <button class="ap-btn" data-h="0.5" data-v="1"   title="Bottom Center">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M8,14 L13,6 L3,6 Z"/></svg>
+        </button>
+        <button class="ap-btn" data-h="1"   data-v="1"   title="Bottom Right">
+          <svg class="ap-icon" viewBox="0 0 16 16"><path d="M14,14 L7,14 L14,7 Z"/></svg>
+        </button>
+
+      </div>
+    </div>
+
+    <!-- Color Picker -->
+    <div class="cp-area">
+
+      <div class="cp-card">
+        <div class="cp-preview" id="cp-preview"></div>
+        <div class="cp-values">
+          <div class="cp-hex-row">
+            <span class="cp-hash">#</span>
+            <span class="cp-hex-val" id="cp-hex-val">4CAF50</span>
+            <button class="cp-icon-btn" id="cp-copy-btn" title="클립보드에 복사">
+              <svg class="cp-btn-icon" viewBox="0 0 16 16" fill="none">
+                <rect x="5" y="2" width="8" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M3 5v8a1 1 0 001 1h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="cp-rgb-row">
+            <span class="cp-rgb-chip">R <b id="cp-r">76</b></span>
+            <span class="cp-rgb-chip">G <b id="cp-g">175</b></span>
+            <span class="cp-rgb-chip">B <b id="cp-b">80</b></span>
+          </div>
+          <div class="cp-rgb-row">
+            <span class="cp-rgb-chip">H <b id="cp-hue">123</b></span>
+            <span class="cp-rgb-chip">S <b id="cp-sat">57</b></span>
+            <span class="cp-rgb-chip">B <b id="cp-bri">69</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 폴백용 숨겨진 네이티브 컬러 인풋 -->
+      <input type="color" id="cp-color-input"
+             style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:none;padding:0;">
+
+      <div class="cp-pick-area">
+        <button class="cp-pick-btn" id="cp-eyedropper-btn">
+          <svg class="cp-pick-icon" viewBox="0 0 20 20" fill="none">
+            <path d="M14 2.5L17.5 6 9.5 14 6 10.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <line x1="6" y1="10.5" x2="3.2" y2="16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="2.8" cy="17.2" r="1.5" fill="currentColor"/>
+          </svg>
+          Color Picker
+        </button>
+        <div class="cp-status" id="cp-status"></div>
+      </div>
+
+      <div class="cp-history-row">
+        <div class="cp-history" id="cp-history"></div>
+        <button class="cp-clear-btn" id="cp-clear-btn" title="히스토리 초기화">
+          <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+            <line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="10" y1="2" x2="2"  y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Status Bar -->
+  <footer class="statusbar">
+    <span class="statusbar__text" id="status-text">Ready</span>
+    <span class="statusbar__credit">만든사람 : 방모씨</span>
+  </footer>
+
+  <script src="js/CSInterface.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

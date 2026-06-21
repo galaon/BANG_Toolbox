@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<ExtensionManifest
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  ExtensionBundleId="com.bang.toolbox"
+  ExtensionBundleVersion="1.0.0"
+  ExtensionBundleName="BANG_Toolbox"
+  Version="9.0">
+
+  <ExtensionList>
+    <Extension Id="com.bang.toolbox" Version="1.0.0"/>
+  </ExtensionList>
+
+  <ExecutionEnvironment>
+    <HostList>
+      <!-- After Effects CC 2022 (22.0) ~ 최신 버전 -->
+      <Host Name="AEFT" Version="[22.0,99.9]"/>
+    </HostList>
+    <LocaleList>
+      <Locale Code="All"/>
+    </LocaleList>
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="9.0"/>
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+
+  <DispatchInfoList>
+    <Extension Id="com.bang.toolbox">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/hostscript.jsx</ScriptPath>
+          <CEFCommandLine>
+            <!-- 개발 중 DevTools 사용을 위해 포트 지정 -->
+            <Parameter>--allow-file-access-from-files</Parameter>
+            <Parameter>--remote-debugging-port=8089</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Menu>BANG_Toolbox</Menu>
+          <Geometry>
+            <Size>
+              <Height>500</Height>
+              <Width>280</Width>
+            </Size>
+            <MinSize>
+              <Height>300</Height>
+              <Width>220</Width>
+            </MinSize>
+          </Geometry>
+          <Icons>
+            <Icon Type="Normal">./icons/icon_32.png</Icon>
+            <Icon Type="RollOver">./icons/icon_32.png</Icon>
+            <Icon Type="DarkNormal">./icons/icon_32.png</Icon>
+            <Icon Type="DarkRollOver">./icons/icon_32.png</Icon>
+          </Icons>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+
+</ExtensionManifest>
