@@ -309,34 +309,49 @@ function findNullSource() {
     return null;
 }
 
-// 선택한 기준 레이어의 마스크 영역 중심(컴프 공간)에 Null 을 배치한다.
-//  · 마스크가 없으면 false 를 반환하고 위치를 건드리지 않는다(기존 동작 유지).
+// 마스크가 있는 "모든" 선택 레이어의 마스크 영역 중심을 컴프 공간에서 구해
+// 그 평균(centroid) 위치에 Null 을 배치한다.
+//  · 마스크가 있는 선택 레이어만 집계한다. 하나도 없으면 false (위치 유지 = 기존 동작).
 //  · 반드시 parent 연결 "이전"에 호출해야 한다 — 연결 후엔 toComp 가 순환된다.
-//  레이어 공간 -> 컴프 공간 변환은 AE 표현식의 toComp() 를 잠시 빌려 정확히 수행
-//  (부모/스케일/회전/3D 합성까지 AE 가 처리). 인덱스 참조라 동명 레이어도 안전.
-function _positionNullAtMaskCenter(nullLayer, refLayer, time) {
-    var maskRect = _maskBoundsAtTime(refLayer, time);
-    if (maskRect === null) return false;
-
-    var cx = maskRect.left + maskRect.width  / 2;
-    var cy = maskRect.top  + maskRect.height / 2;
-
+//  레이어 공간 -> 컴프 공간 변환은 Null 의 Position 에 AE 표현식 toComp() 를 잠시 걸어
+//  평가(부모/스케일/회전/3D 합성까지 AE 가 처리)한 뒤, 평균값을 정적으로 굳힌다.
+//  인덱스 참조라 동명 레이어가 있어도 안전.
+function _positionNullAtMaskCenter(nullLayer, refLayers, time) {
     var posProp = nullLayer.property("ADBE Transform Group").property("ADBE Position");
-    var expr = 'thisComp.layer(' + refLayer.index + ').toComp([' + cx + ',' + cy + ']);';
+
+    var sumX = 0, sumY = 0, sumZ = 0, n = 0, any3D = false;
 
     try {
-        posProp.expression = expr;
-        var world = posProp.value;     // 표현식 평가 결과(컴프 공간)
-        posProp.expression = "";       // 표현식 제거 -> 정적 값으로 고정
-        if (!nullLayer.threeDLayer && world.length > 2) {
-            world = [world[0], world[1]];
+        for (var i = 0; i < refLayers.length; i++) {
+            var refLayer = refLayers[i];
+            var maskRect = _maskBoundsAtTime(refLayer, time);
+            if (maskRect === null) continue;
+
+            var cx = maskRect.left + maskRect.width  / 2;
+            var cy = maskRect.top  + maskRect.height / 2;
+
+            posProp.expression =
+                'thisComp.layer(' + refLayer.index + ').toComp([' + cx + ',' + cy + ']);';
+            var world = posProp.value;   // 표현식 평가 결과(컴프 공간)
+
+            sumX += world[0];
+            sumY += world[1];
+            if (world.length > 2) { sumZ += world[2]; any3D = true; }
+            n++;
         }
-        posProp.setValue(world);
-        return true;
     } catch (e) {
         try { posProp.expression = ""; } catch (e2) {}
         return false;
     }
+
+    posProp.expression = "";   // 표현식 제거 -> 정적 값으로 고정
+    if (n === 0) return false;
+
+    var avg = (nullLayer.threeDLayer && any3D)
+        ? [sumX / n, sumY / n, sumZ / n]
+        : [sumX / n, sumY / n];
+    posProp.setValue(avg);
+    return true;
 }
 
 function createGreenNull() {
@@ -381,15 +396,9 @@ function createGreenNull() {
             .property("ADBE Anchor Point")
             .setValue([50, 50, 0]);
 
-        // 마스크가 있는 첫 선택 레이어를 기준으로 Null 을 마스크 영역 중심에 배치.
+        // 마스크가 있는 모든 선택 레이어의 마스크 중심을 평균낸 위치에 Null 배치.
         // (부모 연결 전에 수행 — toComp 순환 방지. 마스크 없으면 기존 위치 유지)
-        var maskCentered = false;
-        for (var r = 0; r < selected.length; r++) {
-            if (_positionNullAtMaskCenter(nullLayer, selected[r], comp.time)) {
-                maskCentered = true;
-                break;
-            }
-        }
+        var maskCentered = _positionNullAtMaskCenter(nullLayer, selected, comp.time);
 
         var parented = 0;
         for (var i = 0; i < selected.length; i++) {
