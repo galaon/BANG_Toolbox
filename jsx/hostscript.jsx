@@ -309,6 +309,36 @@ function findNullSource() {
     return null;
 }
 
+// 선택한 기준 레이어의 마스크 영역 중심(컴프 공간)에 Null 을 배치한다.
+//  · 마스크가 없으면 false 를 반환하고 위치를 건드리지 않는다(기존 동작 유지).
+//  · 반드시 parent 연결 "이전"에 호출해야 한다 — 연결 후엔 toComp 가 순환된다.
+//  레이어 공간 -> 컴프 공간 변환은 AE 표현식의 toComp() 를 잠시 빌려 정확히 수행
+//  (부모/스케일/회전/3D 합성까지 AE 가 처리). 인덱스 참조라 동명 레이어도 안전.
+function _positionNullAtMaskCenter(nullLayer, refLayer, time) {
+    var maskRect = _maskBoundsAtTime(refLayer, time);
+    if (maskRect === null) return false;
+
+    var cx = maskRect.left + maskRect.width  / 2;
+    var cy = maskRect.top  + maskRect.height / 2;
+
+    var posProp = nullLayer.property("ADBE Transform Group").property("ADBE Position");
+    var expr = 'thisComp.layer(' + refLayer.index + ').toComp([' + cx + ',' + cy + ']);';
+
+    try {
+        posProp.expression = expr;
+        var world = posProp.value;     // 표현식 평가 결과(컴프 공간)
+        posProp.expression = "";       // 표현식 제거 -> 정적 값으로 고정
+        if (!nullLayer.threeDLayer && world.length > 2) {
+            world = [world[0], world[1]];
+        }
+        posProp.setValue(world);
+        return true;
+    } catch (e) {
+        try { posProp.expression = ""; } catch (e2) {}
+        return false;
+    }
+}
+
 function createGreenNull() {
     var comp = app.project.activeItem;
 
@@ -351,6 +381,16 @@ function createGreenNull() {
             .property("ADBE Anchor Point")
             .setValue([50, 50, 0]);
 
+        // 마스크가 있는 첫 선택 레이어를 기준으로 Null 을 마스크 영역 중심에 배치.
+        // (부모 연결 전에 수행 — toComp 순환 방지. 마스크 없으면 기존 위치 유지)
+        var maskCentered = false;
+        for (var r = 0; r < selected.length; r++) {
+            if (_positionNullAtMaskCenter(nullLayer, selected[r], comp.time)) {
+                maskCentered = true;
+                break;
+            }
+        }
+
         var parented = 0;
         for (var i = 0; i < selected.length; i++) {
             if (selected[i].index !== nullLayer.index) {
@@ -360,7 +400,7 @@ function createGreenNull() {
         }
 
         app.endUndoGroup();
-        return ok({ name: nullLayer.name, parented: parented });
+        return ok({ name: nullLayer.name, parented: parented, maskCentered: maskCentered });
 
     } catch (e) {
         app.endUndoGroup();

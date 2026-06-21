@@ -297,9 +297,10 @@ document.getElementById('btn-create-green-null').addEventListener('click', () =>
     try {
       const res = JSON.parse(result);
       if (res.success) {
-        const msg = res.parented > 0
+        let msg = res.parented > 0
           ? `"${res.name}" created — ${res.parented} layer(s) parented`
           : `"${res.name}" created`;
+        if (res.maskCentered) msg += ' · mask-centered';
         setStatus(msg, 'success');
       } else {
         setStatus('Error: ' + res.error, 'error');
