@@ -64,9 +64,22 @@ document.querySelectorAll('.ap-btn').forEach(btn => {
 
 // ── Color Picker ─────────────────────────────────────────────
 
-const CP_HISTORY_KEY = 'aegreatagain-cp-history';
+const CP_HISTORY_KEY = 'bang-toolbox-cp-history';
 const CP_HISTORY_MAX = 8;
 let cpCurrentHex = '#4CAF50';
+
+// 리브랜딩: 구 키(aegreatagain-cp-history)에 저장된 히스토리를 신규 키로 1회 이관.
+// 기존 저장 색상 스와치를 잃지 않도록 보존한 뒤 구 키를 제거한다.
+(function cpMigrateLegacyHistory() {
+  try {
+    const LEGACY = 'aegreatagain-cp-history';
+    if (localStorage.getItem(CP_HISTORY_KEY) === null) {
+      const old = localStorage.getItem(LEGACY);
+      if (old !== null) localStorage.setItem(CP_HISTORY_KEY, old);
+    }
+    localStorage.removeItem(LEGACY);
+  } catch (e) { /* localStorage 불가 환경 무시 */ }
+})();
 
 // ── 유틸리티 ─────────────────────────────────────────────────
 

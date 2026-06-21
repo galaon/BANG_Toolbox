@@ -32,13 +32,68 @@ function buildNullName(comp) {
     else                 return base + next;
 }
 
+// ── Mask / Bounds 유틸리티 ────────────────────────────────────
+//
+//  레이어의 "기준 바운딩 박스"를 레이어 로컬 공간으로 반환한다.
+//   · 마스크가 하나라도 있으면 → 마스크 영역(유효 마스크 정점들의 합집합 bbox)
+//   · 마스크가 없으면          → 기존과 동일하게 sourceRectAtTime
+//  마스크 정점·sourceRect·Anchor Point 는 모두 같은 레이어 좌표계라 그대로 호환된다.
+//
+//  주의: 베지어 핸들로 인한 곡선 돌출은 반영하지 않고 정점 기준으로 계산한다
+//        (사용자가 그린 마스크 패스 정점 = 의도한 영역으로 충분).
+
+function _maskBoundsAtTime(layer, time) {
+    var maskGroup;
+    try { maskGroup = layer.property("ADBE Mask Parade"); }
+    catch (e) { return null; }
+    if (!maskGroup || maskGroup.numProperties === 0) return null;
+
+    var minX, minY, maxX, maxY;
+    var found = false;
+
+    for (var m = 1; m <= maskGroup.numProperties; m++) {
+        var mask = maskGroup.property(m);
+
+        // 모드가 None 인 마스크는 매트에 영향이 없으므로 제외
+        try { if (mask.maskMode === MaskMode.NONE) continue; } catch (eMode) {}
+
+        var shape;
+        try { shape = mask.property("ADBE Mask Shape").valueAtTime(time, false); }
+        catch (eShape) { continue; }
+
+        var verts = shape.vertices;
+        if (!verts || verts.length === 0) continue;
+
+        for (var i = 0; i < verts.length; i++) {
+            var vx = verts[i][0];
+            var vy = verts[i][1];
+            if (!found) { minX = maxX = vx; minY = maxY = vy; found = true; }
+            else {
+                if (vx < minX) minX = vx;
+                if (vx > maxX) maxX = vx;
+                if (vy < minY) minY = vy;
+                if (vy > maxY) maxY = vy;
+            }
+        }
+    }
+
+    if (!found) return null;
+    return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function _layerBoundsAtTime(layer, time) {
+    var maskRect = _maskBoundsAtTime(layer, time);
+    if (maskRect !== null) return maskRect;
+    return layer.sourceRectAtTime(time, false);
+}
+
 // ── Anchor Point Setter ───────────────────────────────────────
 //
 //  h : 0 = left  | 0.5 = center | 1 = right
 //  v : 0 = top   | 0.5 = center | 1 = bottom
 //
 //  알고리즘:
-//    1) sourceRectAtTime 으로 레이어 바운딩 박스(레이어 공간) 취득
+//    1) 레이어 바운딩 박스 취득 — 마스크가 있으면 마스크 영역, 없으면 sourceRectAtTime
 //    2) 새 Anchor Point 계산
 //    3) 시각적 위치 유지를 위해 Position 자동 보정
 //       delta(layer space) -> scale -> Z rotate -> parent space delta
@@ -71,8 +126,8 @@ function setAnchorPoint(h, v) {
 }
 
 function _moveAnchor(layer, time, h, v) {
-    // 1) 레이어 바운딩 박스 (레이어 로컬 공간)
-    var rect = layer.sourceRectAtTime(time, false);
+    // 1) 레이어 바운딩 박스 (레이어 로컬 공간) — 마스크가 있으면 마스크 영역 기준
+    var rect = _layerBoundsAtTime(layer, time);
 
     // 2) 새 Anchor Point 좌표
     var newAX = rect.left + rect.width  * h;
@@ -237,7 +292,7 @@ function openAEColorPicker(initialHex) {
 //
 //  Project 내 Null 소스를 최초 1회만 생성하고,
 //  이후 호출에서는 동일 소스를 재사용(인스턴스 추가)한다.
-//  → Solids 폴더에 항상 하나의 "AEgreatAgain_null" 항목만 존재.
+//  → Solids 폴더에 항상 하나의 "BANG_Null" 항목만 존재.
 
 var NULL_SOURCE_NAME = "BANG_Null";
 

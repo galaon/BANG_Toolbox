@@ -4,7 +4,7 @@
  * 공식 전체 버전:
  * https://github.com/Adobe-CEP/CEP-Resources/blob/master/CEP_11.x/CSInterface.js
  *
- * 이 파일은 AEgreatAgain 에 필요한 핵심 API만 포함한 경량 버전입니다.
+ * 이 파일은 BANG_Toolbox 에 필요한 핵심 API만 포함한 경량 버전입니다.
  * 문제 발생 시 위 공식 링크의 파일로 교체하세요.
  */
 
