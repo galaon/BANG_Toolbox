@@ -81,15 +81,15 @@ html, body {
 /* ── Tool Row ── */
 .tool-row {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.73rem;                        /* 구 8 */
-  align-items: flex-start;
+  align-items: stretch;
+  height: 8.5rem;                      /* 세로 캡: 폰트 클램프로 ~76~106px (구: 폭의 절반 ~128px) */
 }
 
 /* ── Null Button ── */
 .null-btn {
-  flex: 1 0 7rem;                      /* 구 80px */
-  aspect-ratio: 1;
+  flex: 1 1 6rem;                      /* 남는 가로폭을 채움 (AP 정사각형 옆 가로형 버튼) */
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -113,9 +113,9 @@ html, body {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: 1px;
-  flex: 1 0 7rem;                      /* 구 80px */
+  flex: 0 0 auto;                      /* 정사각형 유지 — 높이로 크기 결정 */
   aspect-ratio: 1;
-  height: auto;
+  height: 100%;
   /* background 없음 — 셀이 bg-base 위에 직접 렌더링 (이중 적층 방지) */
   background: transparent;
   border: 1px solid var(--border);
