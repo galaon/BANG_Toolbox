@@ -1,6 +1,8 @@
 /* ============================================================
    BANG_Toolbox — Design System
-   모든 정적 배경을 솔리드 컬러로 통일 (rgba 알파합성 제거)
+   · 모든 정적 배경을 솔리드 컬러로 통일 (rgba 알파합성 제거)
+   · 모든 치수를 rem 으로 표현 → 루트 폰트 크기 한 줄이 전체 UI 스케일을 결정
+     (반응형: html font-size 가 패널 폭(vw)에 비례 → 4K·1080p 등 동일 비율 유지)
    ============================================================ */
 
 :root {
@@ -47,7 +49,11 @@ html, body {
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif;
-  font-size: 11px;
+  /* 패널 폭에 비례하는 루트 폰트 크기. 모든 치수가 rem 이므로 이 값이 전체 스케일을 정한다.
+     → 디스플레이 해상도·패널 도킹 폭이 달라도 동일한 비율로 보인다.
+     기준: 폭 ~280px 에서 ≈11px (기존 고정값과 동일). 좁으면 9px, 넓으면 12.5px 로 클램프.
+     (반응형을 끄려면 이 줄을 `font-size: 11px;` 로 바꾸면 현재와 동일한 고정 크기로 동작) */
+  font-size: clamp(9px, 4vw, 12.5px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -59,10 +65,10 @@ html, body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 10px 10px 5px;
+  padding: 0.73rem 0.73rem 0.36rem;   /* 구 10/10/5 → 8/8/4 (세로 단축) */
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.73rem;                        /* 구 10 → 8 */
   min-height: 0;
 }
 .content::-webkit-scrollbar { width: 3px; }
@@ -76,30 +82,30 @@ html, body {
 .tool-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.73rem;                        /* 구 8 */
   align-items: flex-start;
 }
 
 /* ── Null Button ── */
 .null-btn {
-  flex: 1 0 80px;
+  flex: 1 0 7rem;                      /* 구 80px */
   aspect-ratio: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 0.45rem;                        /* 구 5 */
   background: var(--bg-btn);
   border-radius: var(--radius-btn);
   border: none;
-  color: var(--text-disabled);
+  color: var(--text-secondary);        /* 시인성: 구 text-disabled */
   transition: var(--tr-btn);
-  padding: 6px;
+  padding: 0.55rem;                    /* 구 6 */
 }
 .null-btn:hover  { background: var(--accent-glow); color: var(--accent); }
 .null-btn:active { background: var(--accent-deep); color: var(--accent-hover); }
-.null-btn__icon  { width: 20px; height: 20px; flex-shrink: 0; }
-.null-btn__label { font-size: 10px; font-weight: 400; white-space: nowrap; }
+.null-btn__icon  { width: 1.82rem; height: 1.82rem; flex-shrink: 0; }   /* 구 20 */
+.null-btn__label { font-size: 0.91rem; font-weight: 400; white-space: nowrap; }  /* 구 10 */
 
 /* ── Anchor Point Widget ── */
 .ap-widget {
@@ -107,7 +113,7 @@ html, body {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: 1px;
-  flex: 1 0 80px;
+  flex: 1 0 7rem;                      /* 구 80px */
   aspect-ratio: 1;
   height: auto;
   /* background 없음 — 셀이 bg-base 위에 직접 렌더링 (이중 적층 방지) */
@@ -125,17 +131,17 @@ html, body {
   padding: 0;
   cursor: pointer;
   transition: var(--tr-btn);
-  color: var(--text-disabled);
+  color: var(--text-secondary);        /* 시인성: 구 text-disabled */
 }
 .ap-icon {
-  width: 11px;
-  height: 11px;
+  width: 1rem;                         /* 구 11px */
+  height: 1rem;
   fill: currentColor;
   transition: transform 0.12s ease;
   pointer-events: none;
   overflow: visible;
 }
-.ap-btn--center       { color: var(--text-secondary); }
+.ap-btn--center       { color: var(--text-primary); }   /* 중앙 강조: 구 text-secondary */
 .ap-btn--center .ap-icon { fill: none; }
 .ap-btn:hover         { background: var(--accent-glow); color: var(--accent); }
 .ap-btn:hover .ap-icon { transform: scale(1.2); }
@@ -145,15 +151,15 @@ html, body {
 .cp-area {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.45rem;                        /* 구 6 → 5 */
 }
 
 /* 색상 카드 */
 .cp-card {
   display: flex;
   align-items: stretch;
-  gap: 10px;
-  padding: 10px;
+  gap: 0.73rem;                        /* 구 10 → 8 */
+  padding: 0.73rem;                    /* 구 10 → 8 */
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -161,8 +167,8 @@ html, body {
 
 /* 색상 미리보기 — 정사각형, box-shadow 제거 */
 .cp-preview {
-  width: 56px;
-  height: 56px;
+  width: 4.36rem;                      /* 구 56 → 48 (세로 단축) */
+  height: 4.36rem;
   align-self: center;
   flex-shrink: 0;
   border-radius: var(--radius-btn);
@@ -177,7 +183,7 @@ html, body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0.36rem;                        /* 구 5 → 4 */
   justify-content: center;
 }
 
@@ -185,17 +191,17 @@ html, body {
 .cp-hex-row {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 0.27rem;                        /* 구 3 */
 }
 .cp-hash {
-  font-size: 13px;
+  font-size: 1.18rem;                  /* 구 13 */
   color: var(--text-disabled);
   flex-shrink: 0;
   font-family: 'Consolas', 'Courier New', monospace;
 }
 .cp-hex-val {
   flex: 1;
-  font-size: 14px;
+  font-size: 1.27rem;                  /* 구 14 */
   font-weight: 600;
   font-family: 'Consolas', 'Courier New', monospace;
   color: var(--text-primary);
@@ -206,8 +212,8 @@ html, body {
 
 /* 복사 아이콘 버튼 */
 .cp-icon-btn {
-  width: 22px;
-  height: 22px;
+  width: 2rem;                         /* 구 22 */
+  height: 2rem;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -215,7 +221,7 @@ html, body {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-tag);
-  color: var(--text-disabled);
+  color: var(--text-secondary);        /* 시인성: 구 text-disabled */
   cursor: pointer;
   transition: background-color 0.10s ease, color 0.10s ease, border-color 0.10s ease;
 }
@@ -224,23 +230,23 @@ html, body {
   background: var(--bg-hover);
   border-color: var(--border-strong);
 }
-.cp-btn-icon { width: 11px; height: 11px; flex-shrink: 0; }
+.cp-btn-icon { width: 1rem; height: 1rem; flex-shrink: 0; }   /* 구 11 */
 
 /* RGB / HSB 칩 행 */
-.cp-rgb-row { display: flex; gap: 4px; }
+.cp-rgb-row { display: flex; gap: 0.36rem; }   /* 구 4 */
 .cp-rgb-chip {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  font-size: 10px;
+  gap: 0.18rem;                        /* 구 2 */
+  font-size: 0.91rem;                  /* 구 10 */
   color: var(--text-disabled);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-tag);
-  padding: 2px 4px;
+  padding: 0.18rem 0.36rem;            /* 구 2 4 */
   overflow: hidden;
 }
 .cp-rgb-chip b {
@@ -253,20 +259,20 @@ html, body {
 .cp-pick-area {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.18rem;                        /* 구 2 */
 }
 .cp-pick-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 0.64rem;                        /* 구 7 */
   width: 100%;
-  height: 36px;
+  height: 2.91rem;                     /* 구 36 → 32 (세로 단축) */
   background: var(--bg-btn);
   border: none;
   border-radius: var(--radius-btn);
-  color: var(--text-disabled);
-  font-size: 11px;
+  color: var(--text-secondary);        /* 시인성: 구 text-disabled */
+  font-size: 1rem;                     /* 구 11 */
   font-weight: 400;
   cursor: pointer;
   transition: var(--tr-btn);
@@ -279,11 +285,11 @@ html, body {
   color: var(--accent) !important;
   cursor: wait !important;
 }
-.cp-pick-icon { width: 16px; height: 16px; flex-shrink: 0; }
+.cp-pick-icon { width: 1.45rem; height: 1.45rem; flex-shrink: 0; }   /* 구 16 */
 
 /* 상태 텍스트 */
 .cp-status {
-  font-size: 10px;
+  font-size: 0.91rem;                  /* 구 10 */
   color: var(--text-disabled);
   text-align: center;
   letter-spacing: -0.01em;
@@ -295,13 +301,13 @@ html, body {
 .cp-history-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.55rem;                        /* 구 6 */
 }
 .cp-history {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 4px;
+  gap: 0.36rem;                        /* 구 4 */
   min-width: 0;
 }
 .cp-swatch {
@@ -322,8 +328,8 @@ html, body {
 
 /* 히스토리 삭제 버튼 */
 .cp-clear-btn {
-  width: 20px;
-  height: 20px;
+  width: 1.82rem;                      /* 구 20 */
+  height: 1.82rem;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -339,18 +345,18 @@ html, body {
 
 /* ── Status Bar ── */
 .statusbar {
-  height: 22px;
-  padding: 0 12px;
+  height: 1.82rem;                     /* 구 22 → 20 (세로 단축) */
+  padding: 0 1.09rem;                  /* 구 0 12 */
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0.73rem;                        /* 구 8 */
   background: var(--bg-surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 .statusbar__text {
-  font-size: 10px;
+  font-size: 0.91rem;                  /* 구 10 */
   color: var(--text-disabled);
   white-space: nowrap;
   overflow: hidden;
@@ -360,7 +366,7 @@ html, body {
 .statusbar__text--success { color: var(--accent); }
 .statusbar__text--error   { color: var(--danger); }
 .statusbar__credit {
-  font-size: 9px;
+  font-size: 0.82rem;                  /* 구 9 */
   color: var(--text-credit);   /* opacity 제거 — 솔리드 컬러로 대체 */
   letter-spacing: -0.01em;
   white-space: nowrap;
