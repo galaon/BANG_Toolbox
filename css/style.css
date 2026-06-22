@@ -165,10 +165,10 @@ html, body {
   border-radius: var(--radius-card);
 }
 
-/* 상단 행: [정사각 피커] [미리보기+hex] [값] */
+/* 메인 행: [정사각 피커] [미리보기] [hex/RGB/HSB 값] */
 .cp-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.64rem;
 }
 
@@ -193,18 +193,11 @@ html, body {
   color: var(--accent) !important;
   cursor: wait !important;
 }
-.cp-pick-icon { width: 1.6rem; height: 1.6rem; flex-shrink: 0; }
+.cp-pick-icon { width: 1.7rem; height: 1.7rem; flex-shrink: 0; }
 
-/* 미리보기 + hex 컬럼 */
-.cp-preview-col {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.27rem;
-}
-.cp-preview-wrap { position: relative; line-height: 0; }
+/* 미리보기 (정사각) */
 .cp-preview {
+  flex-shrink: 0;
   width: 3.6rem;
   height: 3.6rem;
   border-radius: var(--radius-btn);
@@ -213,18 +206,49 @@ html, body {
   background: #4CAF50;
 }
 
-/* 복사 버튼 — 색상 위 좌하단에 바로가기 아이콘처럼 오버레이 */
+/* 값 영역 — 가로 꽉 채움(반응형). hex / RGB / HSB 3행 */
+.cp-values {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.36rem;
+  justify-content: center;
+}
+
+/* Hex 행 (값 영역 상단) */
+.cp-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.27rem;
+}
+.cp-hash {
+  font-size: 1.09rem;
+  color: var(--text-disabled);
+  flex-shrink: 0;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+.cp-hex-val {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.18rem;
+  font-weight: 600;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 복사 버튼 (hex 행 우측, 인라인) */
 .cp-icon-btn {
-  position: absolute;
-  left: -0.27rem;
-  bottom: -0.27rem;
-  width: 1.45rem;
-  height: 1.45rem;
+  flex-shrink: 0;
+  width: 1.82rem;
+  height: 1.82rem;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-tag);
   color: var(--text-secondary);
   cursor: pointer;
@@ -237,38 +261,13 @@ html, body {
 }
 .cp-btn-icon { width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
 
-/* Hex (미리보기 아래) */
-.cp-hex-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.18rem;
-}
-.cp-hash {
-  font-size: 0.91rem;
-  color: var(--text-disabled);
-  font-family: 'Consolas', 'Courier New', monospace;
-}
-.cp-hex-val {
-  font-size: 1rem;
-  font-weight: 600;
-  font-family: 'Consolas', 'Courier New', monospace;
-  color: var(--text-primary);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-/* 값 영역 — 좁은 칸(내용 너비)으로 우측 공간 확보 */
-.cp-values {
-  display: flex;
-  flex-direction: column;
-  gap: 0.36rem;
-  justify-content: center;
-}
+/* RGB/HSB 행 — 가로 꽉 채움 */
 .cp-rgb-row { display: flex; gap: 0.36rem; }
 
-/* 칸: 기호│숫자 분리 */
+/* 칸: 기호│숫자 분리, flex로 가로 채움 */
 .cp-rgb-chip {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: stretch;
   border: 1px solid var(--border);
@@ -277,21 +276,23 @@ html, body {
   font-size: 0.91rem;
 }
 .cp-chip-key {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.4rem;
+  min-width: 1.36rem;
   padding: 0.18rem 0;
   color: var(--text-disabled);
   background: var(--bg-btn);
   border-right: 1px solid var(--border);
 }
 .cp-chip-val {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.4rem;
-  padding: 0.18rem 0.36rem;
+  padding: 0.18rem 0.27rem;
   color: var(--text-secondary);
   background: var(--bg-elevated);
   font-weight: 500;
