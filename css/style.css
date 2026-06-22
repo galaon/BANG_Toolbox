@@ -312,6 +312,7 @@ html, body {
   text-align: center;
   letter-spacing: -0.01em;
 }
+.cp-status:empty { display: none; }   /* 비었을 때 접어 카드 상·하 여백 대칭 */
 .cp-status--success { color: var(--accent); }
 .cp-status--error   { color: var(--danger); }
 
