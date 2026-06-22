@@ -151,132 +151,40 @@ html, body {
 .cp-area {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;                        /* 구 6 → 5 */
+  gap: 0.45rem;
 }
 
-/* 색상 카드 */
+/* 카드: 상단(피커·미리보기·값) + 히스토리를 모두 포함 */
 .cp-card {
   display: flex;
-  align-items: stretch;
-  gap: 0.73rem;                        /* 구 10 → 8 */
-  padding: 0.73rem;                    /* 구 10 → 8 */
+  flex-direction: column;
+  gap: 0.64rem;
+  padding: 0.73rem;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
 }
 
-/* 색상 미리보기 — 정사각형, box-shadow 제거 */
-.cp-preview {
-  width: 4.36rem;                      /* 구 56 → 48 (세로 단축) */
-  height: 4.36rem;
-  align-self: center;
-  flex-shrink: 0;
-  border-radius: var(--radius-btn);
-  border: 1px solid var(--border);
-  transition: var(--tr-bg);
-  background: #4CAF50;
+/* 상단 행: [정사각 피커] [미리보기+hex] [값] */
+.cp-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.64rem;
 }
 
-/* 값 영역 */
-.cp-values {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.36rem;                        /* 구 5 → 4 */
-  justify-content: center;
-}
-
-/* Hex 행 */
-.cp-hex-row {
-  display: flex;
-  align-items: center;
-  gap: 0.27rem;                        /* 구 3 */
-}
-.cp-hash {
-  font-size: 1.18rem;                  /* 구 13 */
-  color: var(--text-disabled);
-  flex-shrink: 0;
-  font-family: 'Consolas', 'Courier New', monospace;
-}
-.cp-hex-val {
-  flex: 1;
-  font-size: 1.27rem;                  /* 구 14 */
-  font-weight: 600;
-  font-family: 'Consolas', 'Courier New', monospace;
-  color: var(--text-primary);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  min-width: 0;
-}
-
-/* 복사 아이콘 버튼 */
-.cp-icon-btn {
-  width: 2rem;                         /* 구 22 */
-  height: 2rem;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-tag);
-  color: var(--text-secondary);        /* 시인성: 구 text-disabled */
-  cursor: pointer;
-  transition: background-color 0.10s ease, color 0.10s ease, border-color 0.10s ease;
-}
-.cp-icon-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-}
-.cp-btn-icon { width: 1rem; height: 1rem; flex-shrink: 0; }   /* 구 11 */
-
-/* RGB / HSB 칩 행 */
-.cp-rgb-row { display: flex; gap: 0.36rem; }   /* 구 4 */
-.cp-rgb-chip {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.18rem;                        /* 구 2 */
-  font-size: 0.91rem;                  /* 구 10 */
-  color: var(--text-disabled);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-tag);
-  padding: 0.18rem 0.36rem;            /* 구 2 4 */
-  overflow: hidden;
-}
-.cp-rgb-chip b {
-  color: var(--text-secondary);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Pick 버튼 + 상태 묶음 */
-.cp-pick-area {
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;                        /* 구 2 */
-}
+/* Color Picker 정사각 버튼 (좌측) */
 .cp-pick-btn {
+  flex-shrink: 0;
+  width: 3.6rem;
+  height: 3.6rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.64rem;                        /* 구 7 */
-  width: 100%;
-  height: 2.91rem;                     /* 구 36 → 32 (세로 단축) */
-  background: var(--bg-btn);
-  border: none;
+  background: var(--bg-elevated);              /* 카드(bg-surface) 위에서 버튼으로 보이도록 */
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-btn);
-  color: var(--text-secondary);        /* 시인성: 구 text-disabled */
-  font-size: 1rem;                     /* 구 11 */
-  font-weight: 400;
-  cursor: pointer;
+  color: var(--text-secondary);
   transition: var(--tr-btn);
-  letter-spacing: -0.01em;
 }
 .cp-pick-btn:hover  { background: var(--accent-glow); color: var(--accent); }
 .cp-pick-btn:active { background: var(--accent-deep); color: var(--accent-hover); }
@@ -285,11 +193,114 @@ html, body {
   color: var(--accent) !important;
   cursor: wait !important;
 }
-.cp-pick-icon { width: 1.45rem; height: 1.45rem; flex-shrink: 0; }   /* 구 16 */
+.cp-pick-icon { width: 1.6rem; height: 1.6rem; flex-shrink: 0; }
 
-/* 상태 텍스트 */
+/* 미리보기 + hex 컬럼 */
+.cp-preview-col {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.27rem;
+}
+.cp-preview-wrap { position: relative; line-height: 0; }
+.cp-preview {
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--border);
+  transition: var(--tr-bg);
+  background: #4CAF50;
+}
+
+/* 복사 버튼 — 색상 위 좌하단에 바로가기 아이콘처럼 오버레이 */
+.cp-icon-btn {
+  position: absolute;
+  left: -0.27rem;
+  bottom: -0.27rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-tag);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.10s ease, color 0.10s ease, border-color 0.10s ease;
+}
+.cp-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.cp-btn-icon { width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
+
+/* Hex (미리보기 아래) */
+.cp-hex-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.18rem;
+}
+.cp-hash {
+  font-size: 0.91rem;
+  color: var(--text-disabled);
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+.cp-hex-val {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* 값 영역 — 좁은 칸(내용 너비)으로 우측 공간 확보 */
+.cp-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.36rem;
+  justify-content: center;
+}
+.cp-rgb-row { display: flex; gap: 0.36rem; }
+
+/* 칸: 기호│숫자 분리 */
+.cp-rgb-chip {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tag);
+  overflow: hidden;
+  font-size: 0.91rem;
+}
+.cp-chip-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  padding: 0.18rem 0;
+  color: var(--text-disabled);
+  background: var(--bg-btn);
+  border-right: 1px solid var(--border);
+}
+.cp-chip-val {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4rem;
+  padding: 0.18rem 0.36rem;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 피커 상태 텍스트 (평소 빈 줄) */
 .cp-status {
-  font-size: 0.91rem;                  /* 구 10 */
+  font-size: 0.82rem;
   color: var(--text-disabled);
   text-align: center;
   letter-spacing: -0.01em;
