@@ -66,7 +66,7 @@
 
       <div class="cp-card">
 
-        <!-- 메인 행: [정사각 피커] [미리보기] [hex / RGB / HSB] -->
+        <!-- 메인 행: [정사각 피커] [미리보기+hex 오버레이] [RGB/HSB] -->
         <div class="cp-top">
 
           <!-- Color Picker (정사각, 좌측) — 스포이드(피펫) -->
@@ -77,21 +77,22 @@
             </svg>
           </button>
 
-          <!-- 미리보기 색상 -->
-          <div class="cp-preview" id="cp-preview"></div>
-
-          <!-- 값: hex / R·G·B / H·S·B (가로 꽉 채움) -->
-          <div class="cp-values">
-            <div class="cp-hex-row">
+          <!-- 미리보기 색상 + hex 오버레이 (반투명 스트립 위 흰색) -->
+          <div class="cp-preview" id="cp-preview">
+            <button class="cp-icon-btn" id="cp-copy-btn" title="클립보드에 복사" aria-label="hex 복사">
+              <svg class="cp-btn-icon" viewBox="0 0 16 16" fill="none">
+                <rect x="5" y="2" width="8" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M3 5v8a1 1 0 001 1h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="cp-hex-overlay">
               <span class="cp-hash">#</span>
               <span class="cp-hex-val" id="cp-hex-val">4CAF50</span>
-              <button class="cp-icon-btn" id="cp-copy-btn" title="클립보드에 복사" aria-label="hex 복사">
-                <svg class="cp-btn-icon" viewBox="0 0 16 16" fill="none">
-                  <rect x="5" y="2" width="8" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
-                  <path d="M3 5v8a1 1 0 001 1h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-                </svg>
-              </button>
             </div>
+          </div>
+
+          <!-- 값: R·G·B / H·S·B (가로 꽉 채움) -->
+          <div class="cp-values">
             <div class="cp-rgb-row">
               <span class="cp-rgb-chip"><span class="cp-chip-key">R</span><b class="cp-chip-val" id="cp-r">76</b></span>
               <span class="cp-rgb-chip"><span class="cp-chip-key">G</span><b class="cp-chip-val" id="cp-g">175</b></span>

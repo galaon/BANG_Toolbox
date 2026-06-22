@@ -195,15 +195,30 @@ html, body {
 }
 .cp-pick-icon { width: 1.7rem; height: 1.7rem; flex-shrink: 0; }
 
-/* 미리보기 (정사각) */
+/* 미리보기 색상 + hex 오버레이 컨테이너 */
 .cp-preview {
+  position: relative;
   flex-shrink: 0;
-  width: 3.6rem;
-  height: 3.6rem;
+  width: 5rem;
+  height: 3.8rem;
   border-radius: var(--radius-btn);
   border: 1px solid var(--border);
+  overflow: hidden;
   transition: var(--tr-bg);
   background: #4CAF50;
+}
+/* 색상 위 hex 오버레이 — 반투명 스트립이라 어떤 색에서도 가독 */
+.cp-hex-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.14rem;
+  padding: 0.2rem;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 /* 값 영역 — 가로 꽉 채움(반응형). hex / RGB / HSB 3행 */
@@ -216,50 +231,41 @@ html, body {
   justify-content: center;
 }
 
-/* Hex 행 (값 영역 상단) */
-.cp-hex-row {
-  display: flex;
-  align-items: center;
-  gap: 0.27rem;
-}
+/* Hex 텍스트 (오버레이 — 스트립 위 흰색) */
 .cp-hash {
-  font-size: 1.09rem;
-  color: var(--text-disabled);
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
   flex-shrink: 0;
   font-family: 'Consolas', 'Courier New', monospace;
 }
 .cp-hex-val {
-  flex: 1;
-  min-width: 0;
-  font-size: 1.18rem;
+  font-size: 0.95rem;
   font-weight: 600;
   font-family: 'Consolas', 'Courier New', monospace;
-  color: var(--text-primary);
+  color: #FFFFFF;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-/* 복사 버튼 (hex 행 우측, 인라인) */
+/* 복사 버튼 — 색상 위 우상단 배지 */
 .cp-icon-btn {
-  flex-shrink: 0;
-  width: 1.82rem;
-  height: 1.82rem;
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  width: 1.4rem;
+  height: 1.4rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.42);
+  border: none;
   border-radius: var(--radius-tag);
-  color: var(--text-secondary);
+  color: #FFFFFF;
   cursor: pointer;
-  transition: background-color 0.10s ease, color 0.10s ease, border-color 0.10s ease;
+  transition: background-color 0.10s ease;
 }
-.cp-icon-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-}
-.cp-btn-icon { width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
+.cp-icon-btn:hover { background: rgba(0, 0, 0, 0.62); }
+.cp-btn-icon { width: 0.82rem; height: 0.82rem; flex-shrink: 0; }
 
 /* RGB/HSB 행 — 가로 꽉 채움 */
 .cp-rgb-row { display: flex; gap: 0.36rem; }
@@ -318,7 +324,7 @@ html, body {
 .cp-history {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(12, 1fr);   /* 8 → 12: 스와치 더 작게, 더 많이 */
   gap: 0.36rem;                        /* 구 4 */
   min-width: 0;
 }

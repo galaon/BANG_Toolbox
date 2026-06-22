@@ -65,7 +65,7 @@ document.querySelectorAll('.ap-btn').forEach(btn => {
 // ── Color Picker ─────────────────────────────────────────────
 
 const CP_HISTORY_KEY = 'bang-toolbox-cp-history';
-const CP_HISTORY_MAX = 8;
+const CP_HISTORY_MAX = 12;
 let cpCurrentHex = '#4CAF50';
 
 // 리브랜딩: 구 키(aegreatagain-cp-history)에 저장된 히스토리를 신규 키로 1회 이관.
