@@ -1,8 +1,8 @@
 # BANG_Toolbox
 
->create Null · Null 생성
->move Anchor Point · 앵커포인트 이동
->Color Picker · 색상선택
+>create Null · Null 생성<br>
+>move Anchor Point · 앵커포인트 이동<br>
+>Color Picker · 색상선택<br>
 
 
 
@@ -40,7 +40,7 @@
 
 ## 👤 Credits
 
-- 제작 · 디자인: **방명환** (방송 그래픽 디자이너)
+- 제작 · 디자인: **방명환**
 
 ---
 
