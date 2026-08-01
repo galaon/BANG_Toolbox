@@ -17,7 +17,8 @@ function err(msg) {
 }
 
 function buildNullName(comp) {
-    var base  = "BANG_Null_";
+    // AE 기본 Null 명명 규칙("Null 1", "Null 2" ...)을 따른다.
+    var base  = "Null ";
     var count = 0;
     for (var i = 1; i <= comp.numLayers; i++) {
         var n = comp.layer(i).name;
@@ -26,10 +27,7 @@ function buildNullName(comp) {
             if (!isNaN(num) && num > count) count = num;
         }
     }
-    var next = count + 1;
-    if (next < 10)       return base + "00" + next;
-    else if (next < 100) return base + "0"  + next;
-    else                 return base + next;
+    return base + (count + 1);
 }
 
 // ── Mask / Bounds 유틸리티 ────────────────────────────────────
@@ -373,6 +371,9 @@ function createGreenNull() {
     try {
         var nullLayer;
         var existingSource = findNullSource();
+        // Null 추가 "전에" 이름을 계산한다: 새 Null 의 임시 기본명("Null 1")이
+        // "Null " 접두사와 겹쳐 자기 자신을 카운트하는 off-by-one 을 방지.
+        var newName = buildNullName(comp);
 
         if (existingSource !== null) {
             // ── 재사용 경로 ──────────────────────────────────────
@@ -387,7 +388,7 @@ function createGreenNull() {
             nullLayer.source.name = NULL_SOURCE_NAME;
         }
 
-        nullLayer.name            = buildNullName(comp);
+        nullLayer.name            = newName;
         nullLayer.label           = 9;    // Green
         nullLayer.adjustmentLayer = true; // Adjustment Layer 활성화
 
