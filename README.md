@@ -4,6 +4,10 @@
 >move Anchor Point · 앵커포인트 이동<br>
 >Color Picker · 색상선택<br>
 
+## [즉시 다운로드](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)
+
+압축을 풀고 `INSTALL.txt` 의 순서대로 진행하십시오.
+
 
 
 ## ✨ 기능
