@@ -14,7 +14,7 @@
 #include <vector>
 
 #define BANG_CLONER_MAJOR   1
-#define BANG_CLONER_MINOR   0
+#define BANG_CLONER_MINOR   1
 #define BANG_CLONER_BUG     0
 #define BANG_CLONER_STAGE   PF_Stage_DEVELOP
 #define BANG_CLONER_BUILD   1
@@ -22,30 +22,35 @@
 // 파라미터 인덱스 (0 = 입력 레이어). 그룹(topic) 없이 평면 — 스트림 인덱스와 1:1 로 맞추기 위함
 enum {
     BC_INPUT = 0,
-    BC_MODE,          // 배치: 선형 | 그리드 | 방사형
-    BC_COUNT,         // 복제 개수 (선형·방사형)
-    BC_COLS,          // 열 (그리드)
-    BC_ROWS,          // 행 (그리드)
-    BC_MOVE_X,        // 이동 X (선형, 클론당 px)
-    BC_MOVE_Y,        // 이동 Y (선형)
-    BC_CELL_X,        // 칸 간격 X (그리드)
-    BC_CELL_Y,        // 칸 간격 Y (그리드)
-    BC_RADIUS,        // 반지름 (방사형)
-    BC_START_ANGLE,   // 시작 각도 (방사형)
-    BC_SWEEP,         // 각도 범위 (방사형)
-    BC_FACE_OUT,      // 바깥쪽 향하기 (방사형)
-    BC_CENTER,        // 중심 (레이어 좌표)
-    BC_ROT_STEP,      // 회전 단계 (클론당 °)
-    BC_SCALE_STEP,    // 크기 단계 (클론당 %)
-    BC_OPACITY_END,   // 끝 불투명도 (%)
-    BC_RAND_POS,      // 랜덤 위치 (px)
-    BC_RAND_ROT,      // 랜덤 회전 (°)
-    BC_RAND_SCALE,    // 랜덤 크기 (%)
-    BC_SEED,          // 시드
+    BC_MODE,          // Layout: Linear | Grid | Radial
+    BC_COUNT,         // Count (Linear·Radial)
+    BC_ORIGIN,        // Origin Index — 원본이 몇 번째인지 (Linear, 1 기준)
+    BC_DIR,           // Direction: Horizontal | Vertical (Linear)
+    BC_GAP,           // Gap — 이웃 클론 경계 사이 px, 음수 = 겹침 (Linear)
+    BC_OFFSET,        // Offset — 진행 방향과 수직으로 클론당 px (Linear)
+    BC_COLS,          // Columns (Grid)
+    BC_ROWS,          // Rows (Grid)
+    BC_GAP_X,         // Gap X (Grid)
+    BC_GAP_Y,         // Gap Y (Grid)
+    BC_GRID_ORIGIN,   // Grid Origin — 원본이 놓이는 칸 (9방향, Grid)
+    BC_RADIUS,        // Radius (Radial)
+    BC_START_ANGLE,   // Start Angle (Radial)
+    BC_SWEEP,         // Sweep (Radial)
+    BC_FACE_OUT,      // Face Outward (Radial)
+    BC_CENTER,        // Center — 원 중심, 레이어 좌표 (Radial)
+    BC_ROT_STEP,      // Rotation Step (클론당 °)
+    BC_SCALE_STEP,    // Scale Step (클론당 %)
+    BC_OPACITY_END,   // End Opacity (%)
+    BC_RAND_POS,      // Random Position (px)
+    BC_RAND_ROT,      // Random Rotation (°)
+    BC_RAND_SCALE,    // Random Scale (%)
+    BC_SEED,          // Seed
     BC_NUM_PARAMS
 };
 
 enum { BC_MODE_LINEAR = 1, BC_MODE_GRID = 2, BC_MODE_RADIAL = 3 };
+enum { BC_DIR_H = 1, BC_DIR_V = 2 };
+// Grid Origin: 1 Top Left · 2 Top · 3 Top Right · 4 Left · 5 Center · 6 Right · 7 Bottom Left · 8 Bottom · 9 Bottom Right
 
 // 클론 하나의 변환: 출력 = [a b; c d]·소스 + [tx ty] (레이어 좌표) + 불투명도
 struct BC_Xf { double a, b, c, d, tx, ty; float opacity; };

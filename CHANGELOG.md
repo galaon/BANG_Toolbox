@@ -6,9 +6,9 @@
 ## [1.3.0] — 2026-09-22
 
 ### Added
-- **BANG Cloner (네이티브 이펙트, Windows)** — 레이어를 복제하지 않고 소스의 현재 프레임을 N개 인스턴스로 렌더하는 클로너(Motion Tile 모델). 배치 선형/그리드/방사형, 복제 개수(최대 1000)·열/행·이동·칸 간격·반지름·시작 각도·각도 범위·바깥쪽 향하기·중심, 회전/크기 단계, 끝 불투명도, 랜덤 위치/회전/크기 + 시드. 배치 모드에 맞지 않는 항목은 Effect Controls 에서 자동 숨김. 8/16/32bpc, 클론 경계만큼 버퍼 확장. 소스 애니메이션 타이밍이 클론 개수와 무관하게 정확(실측: 1000 클론 100×100 px ≈ 0.1 s). `plugins/BANG_Cloner.aex`.
+- **BANG Cloner (네이티브 이펙트, Windows)** — 레이어를 복제하지 않고 소스의 현재 프레임을 N개 인스턴스로 렌더하는 클로너(Motion Tile 모델). Layout Linear/Grid/Radial. 간격은 소스 크기와 무관한 **Gap(이웃 경계 사이 px, 음수 = 겹침)**, Linear 는 `Origin Index`(원본이 몇 번째인지)·`Direction`·`Offset`, Grid 는 `Columns/Rows`·`Gap X/Y`·`Grid Origin`(원본이 놓이는 칸 9방향), Radial 은 `Radius`·`Start Angle`·`Sweep`·`Face Outward`·`Center`. 공통 `Rotation/Scale Step`·`End Opacity`·`Random Position/Rotation/Scale`·`Seed`. 배치에 맞지 않는 항목은 Effect Controls 에서 자동 숨김. 8/16/32bpc, 클론 경계만큼 버퍼 확장, 멀티스레드 + 정수 이동 직접 복사 경로. 소스 애니메이션 타이밍이 클론 개수와 무관하게 정확(실측: 1000 클론 100×100 ≈ 0.1 s, 1440×2560 20 클론 회전 ≈ 0.2 s). 파라미터 이름 영문. `plugins/BANG_Cloner.aex`.
 - **패널 Stroke 타일** — 선택 레이어에 `BANG Stroke` 적용.
-- **BANG Stroke (네이티브 이펙트, Windows)** — 알파 경계 거리 기반 획: 위치(바깥/중앙/안쪽)·두께·오프셋·색·불투명도·부드러움·본체 숨김·합성 순서. 8/16/32bpc, 레이어 경계 밖 획도 잘리지 않음. `plugins/BANG_Stroke.aex` 를 AE `Plug-ins\BANG\` 에 복사해 설치.
+- **BANG Stroke (네이티브 이펙트, Windows)** — 알파 경계 거리 기반 획: `Position`(Outside/Center/Inside)·`Width`·`Offset`·`Color`·`Opacity`·`Softness`·`Body`(Hide = 획만)·`Order`. 파라미터 이름 영문. 8/16/32bpc, 레이어 경계 밖 획도 잘리지 않음. `plugins/BANG_Stroke.aex` 를 AE `Plug-ins\BANG\` 에 복사해 설치.
 - **Bento Grid** — 사용자의 `BentoGrid.jsx` v1.3.0 엔진 이식(타일 크기 배정·빔/그리디 패킹·Cover 크롭 마스크·마스크 정리). Unit/Gap/Width, Fit, Variety, Packing Style, Crop/Center/Mix, Repack·Randomize·Clear Masks.
 - **Cloner 래스터라이즈** — 클론을 독립 레이어로 굳힘(표현식 제거, shy/잠금 해제, 이펙트 정리). 이펙트의 체크박스로 실행.
 

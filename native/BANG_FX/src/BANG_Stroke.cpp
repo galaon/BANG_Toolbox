@@ -28,30 +28,13 @@ static void LOGF(const char* fmt, ...) {
 #define LOGF(...) ((void)0)
 #endif
 
-// ── 문자열: 소스는 UTF-8, AE(Windows) 파라미터 이름은 ANSI 코드페이지 → 런타임 변환 ──
-static const char* K(const char* utf8) {
-#if defined(AE_OS_WIN) && defined(BANG_NAMES_ANSI)
-    static thread_local char bufs[16][128];
-    static thread_local int  slot = 0;
-    char* out = bufs[slot = (slot + 1) & 15];
-    wchar_t w[128];
-    int n = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, w, 128);
-    if (n <= 0) { strncpy_s(out, 128, utf8, _TRUNCATE); return out; }
-    int m = WideCharToMultiByte(CP_ACP, 0, w, -1, out, 128, NULL, NULL);
-    if (m <= 0) { strncpy_s(out, 128, utf8, _TRUNCATE); }
-    return out;
-#else
-    return utf8;
-#endif
-}
-
 // ── 명령 처리 ────────────────────────────────────────────────
 
 static PF_Err About(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     AEGP_SuiteHandler suites(in_data->pica_basicP);
-    suites.ANSICallbacksSuite1()->sprintf(out_data->return_msg, "BANG Stroke v%d.%d\r%s",
-        BANG_STROKE_MAJOR, BANG_STROKE_MINOR, K("알파 경계 기반 획 — BANG_Toolbox"));
+    suites.ANSICallbacksSuite1()->sprintf(out_data->return_msg, "BANG Stroke v%d.%d\rAlpha-edge distance stroke - BANG_Toolbox",
+        BANG_STROKE_MAJOR, BANG_STROKE_MINOR);
     return PF_Err_NONE;
 }
 
@@ -70,28 +53,28 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ParamDef def;
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP(K("획 위치"), 3, BS_POS_OUTSIDE, K("바깥|중앙|안쪽"), BS_DISK_POSITION);
+    PF_ADD_POPUP("Position", 3, BS_POS_OUTSIDE, "Outside|Center|Inside", BS_DISK_POSITION);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX(K("두께"), 0, 1000, 0, 60, 6, PF_Precision_TENTHS, 0, 0, BS_DISK_WIDTH);
+    PF_ADD_FLOAT_SLIDERX("Width", 0, 1000, 0, 60, 6, PF_Precision_TENTHS, 0, 0, BS_DISK_WIDTH);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX(K("오프셋"), -500, 500, -20, 20, 0, PF_Precision_TENTHS, 0, 0, BS_DISK_OFFSET);
+    PF_ADD_FLOAT_SLIDERX("Offset", -500, 500, -20, 20, 0, PF_Precision_TENTHS, 0, 0, BS_DISK_OFFSET);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_COLOR(K("색"), PF_MAX_CHAN8, PF_MAX_CHAN8, PF_MAX_CHAN8, BS_DISK_COLOR);
+    PF_ADD_COLOR("Color", PF_MAX_CHAN8, PF_MAX_CHAN8, PF_MAX_CHAN8, BS_DISK_COLOR);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX(K("불투명도"), 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, 0, BS_DISK_OPACITY);
+    PF_ADD_FLOAT_SLIDERX("Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, 0, BS_DISK_OPACITY);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX(K("부드러움"), 0, 200, 0, 20, 0, PF_Precision_TENTHS, 0, 0, BS_DISK_SOFTNESS);
+    PF_ADD_FLOAT_SLIDERX("Softness", 0, 200, 0, 20, 0, PF_Precision_TENTHS, 0, 0, BS_DISK_SOFTNESS);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP(K("본체"), 2, BS_BODY_KEEP, K("유지|숨김 (획만)"), BS_DISK_BODY);
+    PF_ADD_POPUP("Body", 2, BS_BODY_KEEP, "Keep|Hide (stroke only)", BS_DISK_BODY);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP(K("합성 순서"), 2, BS_ORDER_BEHIND, K("획을 뒤에|획을 앞에"), BS_DISK_ORDER);
+    PF_ADD_POPUP("Order", 2, BS_ORDER_BEHIND, "Stroke Behind|Stroke In Front", BS_DISK_ORDER);
 
     out_data->num_params = BS_NUM_PARAMS;
     return err;

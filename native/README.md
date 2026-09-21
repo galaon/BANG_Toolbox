@@ -35,25 +35,31 @@ native/
 ## 이펙트
 
 ### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG)
-알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))로 획을 그린다. 파라미터(한글): 획 위치(바깥/중앙/안쪽) · 두께 · 오프셋 · 색 · 불투명도 · 부드러움 · 본체(유지/숨김) · 합성 순서(뒤/앞).
+알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))로 획을 그린다. 파라미터(영문): `Position`(Outside/Center/Inside) · `Width` · `Offset` · `Color` · `Opacity` · `Softness` · `Body`(Keep/Hide) · `Order`(Stroke Behind/In Front).
 - SmartFX, 8/16/32bpc, 멀티프레임 렌더 OK. 출력 버퍼를 (오프셋+두께+부드러움+2) 만큼 확장(`PF_OutFlag_I_EXPAND_BUFFER`).
 - 거리장은 **출력 영역 + 여백 격자**에서 계산(AE 가 넘기는 입력 world 는 레이어 내용 경계로 잘려 있어 그 밖은 투명으로 채움).
 - 안쪽/중앙 획은 항상 본체 위에 합성(Layer Style 과 동일), '합성 순서'는 바깥 획에만 적용.
 - 다운샘플(해상도 1/2 등) 시 px 파라미터를 비율로 보정.
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)
-소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 역행렬 바이리니어 샘플링으로 출력에 over 합성(Motion Tile 모델). 파라미터(한글, 평면 — 그룹 없음): 배치(선형/그리드/방사형) · 복제 개수 · 열·행 · 이동 X/Y · 칸 간격 X/Y · 반지름 · 시작 각도 · 각도 범위 · 바깥쪽 향하기 · 중심 · 회전 단계 · 크기 단계 · 끝 불투명도 · 랜덤 위치/회전/크기 · 시드.
-- 피벗 = 입력 `max_result_rect` 의 중심(내용 경계 중심): 회전·크기는 각 클론 자신의 중심 기준, 선형은 원본 자리에서 출발, 그리드·방사형은 `중심` 파라미터 기준으로 배치.
-- 출력 `max_result_rect` = 모든 클론으로 변환한 입력 경계의 합집합(+1px). 입력은 전체(±100000)를 요청 → AE 가 레이어 경계로 자름.
-- 배치 모드별 항목 숨김: AE 는 `PF_PUI_INVISIBLE` 을 동적으로 못 바꾸므로 `AEGP_DynamicStreamSuite2::AEGP_SetDynamicStreamFlag(HIDDEN)` 을 `PF_Cmd_UPDATE_PARAMS_UI`/`USER_CHANGED_PARAM`(배치 popup 은 `PF_ParamFlag_SUPERVISE`) 에서 호출. 플러그인 ID 는 GlobalSetup 의 `AEGP_RegisterWithAEGP`. 그룹(topic) 을 안 쓴 이유: 스트림 인덱스 = 파라미터 인덱스 를 단순하게 유지.
-- 실측(AE 2026, 100×100 사각형): 선형 4개·이동 150 → 중심 300/450/600/750, 크기 단계 −20% → 100/80/60/40 px 제자리 축소, 끝 불투명도 25% → 100/75/50/25%, 그리드 3×2 → 열 450/600/750 · 행 325/475, 방사형 r200 → 상하좌우 200px, 회전 45° → 대각선 폭 140, 애니메이션 소스 0.5 s → 클론 전부 같은 프레임. 1/100/300/1000 클론 렌더 ≈ 0/44/71/84 ms 증분.
+소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 출력에 over 합성(Motion Tile 모델). 파라미터(영문, 평면 — 그룹 없음):
+- 공통: `Layout`(Linear/Grid/Radial) · `Rotation Step` · `Scale Step` · `End Opacity` · `Random Position/Rotation/Scale` · `Seed`
+- Linear: `Count` · `Origin Index`(몇 번째 클론이 원본 자리인지, 1 기준) · `Direction`(Horizontal/Vertical) · `Gap`(이웃 클론 **경계 사이** px, 음수 = 겹침) · `Offset`(진행 방향과 수직으로 클론당 px)
+- Grid: `Columns` · `Rows` · `Gap X/Y` · `Grid Origin`(원본이 놓이는 칸, 9방향; Center 는 짝수일 때 왼쪽/위쪽 칸)
+- Radial: `Count` · `Radius` · `Start Angle` · `Sweep` · `Face Outward` · `Center`(레이어 좌표, 기본 50%)
+- Gap 은 소스 **내용 경계 크기**(`max_result_rect`) 를 더해 걸음 폭으로 바꾼다(`srcW + gap`) → 해상도가 커도 "여백 px" 만 조절. 피벗 = 내용 경계 중심: 회전·크기는 각 클론 자신의 중심 기준, Linear 는 원본 자리에서 출발.
+- 출력 `max_result_rect` = 모든 클론으로 변환한 입력 경계의 합집합(+1px). `result_rect` = 요청 ∩ 최대 → 실제 버퍼는 요청 크기만. 입력은 전체(±100000)를 요청해 AE 가 레이어 경계로 자른다.
+- 렌더 경로: (1) 회전·크기 없음 + 정수 이동 → 픽셀 직접 복사, (2) 그 외 → 역행렬 증분 바이리니어(float). 두 경로 모두 행 범위를 최대 8 스레드로 분할(`ParallelRows`). 실측 1440×2560 솔리드: 5 클론 ≈ +143 ms, 20 클론 회전 ≈ +186 ms(PNG 저장 포함).
+- 배치 모드별 항목 숨김: AE 는 `PF_PUI_INVISIBLE` 을 동적으로 못 바꾸므로 `AEGP_DynamicStreamSuite2::AEGP_SetDynamicStreamFlag(HIDDEN)` 을 `PF_Cmd_UPDATE_PARAMS_UI`/`USER_CHANGED_PARAM`(`Layout` popup 은 `PF_ParamFlag_SUPERVISE`) 에서 호출. 플러그인 ID 는 GlobalSetup 의 `AEGP_RegisterWithAEGP`. 그룹(topic) 을 안 쓴 이유: 스트림 인덱스 = 파라미터 인덱스 를 단순하게 유지.
+- 실측(AE 2026, 100×100 사각형): Linear Count 4·Gap 50 → 중심 300/450/600/750, Origin Index 3 → 0/150/300/450, Gap −20 → 겹침 340 px 띠, Vertical+Offset 30 → (300,400)(330,550)(360,700), Scale Step −20% → 100/80/60/40 제자리 축소, Grid 3×2 Gap 50/25 Top Left → 열 300/450/600 · 행 400/525, Radial r200 → 상하좌우 200, 애니메이션 소스 → 클론 전부 같은 프레임.
 
 ## 겪은 함정
 - `PF_REGISTER_EFFECT_EXT2` 매크로는 지역 변수 `result` 에 대입한다 — `return PF_REGISTER_EFFECT_EXT2(...)` 는 컴파일 오류.
 - vcxproj 여러 개가 같은 `IntDir` 을 쓰면 MSB8028 경고 + 정리 오작동 → `out\obj\$(Configuration)\$(ProjectName)\`.
-- 동적으로 숨긴 스트림은 **스크립트 `setValue` 가 실패**한다("property is hidden"). 스크립트로 `배치` 를 바꿔도 숨김 상태는 ECW 가 갱신될 때(UPDATE_PARAMS_UI) 반영되므로, 스크립트에서 값을 넣을 땐 현재 표시 중인 항목만 다룬다.
+- 동적으로 숨긴 스트림은 **스크립트 `setValue` 가 실패**한다("property is hidden"). 스크립트로 `Layout` 을 바꾼 뒤 숨김 상태는 ECW 가 갱신될 때(UPDATE_PARAMS_UI) 반영되므로, 같은 evalScript 안에서 바로 값을 넣지 말고 **호출을 나눠**(UI 가 한 번 갱신된 뒤) 넣는다.
 - `saveFrameToPng` 는 비동기 반환 → 렌더 시간은 PNG mtime 차이로 측정.
-- 파라미터 이름은 **UTF-8 그대로** 넘기면 AE 2026 에서 한글이 정상 표시된다 (CP949 변환하면 깨짐).
+- 파라미터 이름은 사용자 요청으로 **영문**(v1.1). 한글이 필요하면 UTF-8 그대로 넘기면 AE 2026 에서 정상 표시된다 (CP949 변환하면 깨짐).
 - `PF_OutFlag`/`OutFlags2` 값은 PiPL(.r) 과 GlobalSetup 이 동일해야 한다 (Stroke: 0x02000200 / 0x08001480, Cloner: 0x06000200 / 0x08001480 — SEND_UPDATE_PARAMS_UI 추가).
 - 경계 픽셀 판정: 전경은 dIn, 배경은 dOut 만 본다 — 자기 자신은 항상 씨앗(거리 0)이라 둘 다 보면 전부 경계로 오판.
 - SDK 헤더에 CP949 로 표현 불가한 문자가 있어 `/utf-8` 없이는 C4819 → 오류.
+- PiPL `AE_Effect_Version` 은 `PF_VERSION(major,minor,bug,stage,build)` 와 같아야 한다: `(major<<19)|(minor<<15)|(bug<<11)|(stage<<9)|build` → 1.0.0 dev b1 = 524289, 1.1.0 = 557057.

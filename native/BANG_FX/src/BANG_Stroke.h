@@ -13,7 +13,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_STROKE_MAJOR   1
-#define BANG_STROKE_MINOR   0
+#define BANG_STROKE_MINOR   1
 #define BANG_STROKE_BUG     0
 #define BANG_STROKE_STAGE   PF_Stage_DEVELOP
 #define BANG_STROKE_BUILD   1
