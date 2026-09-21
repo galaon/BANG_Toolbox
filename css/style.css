@@ -43,6 +43,15 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 button { cursor: pointer; border: none; background: none; font-family: inherit; }
 
+/* ── Focus (키보드 탐색 시에만 표시 — 마우스 클릭엔 링 없음) ── */
+:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: inherit; }
+
+/* ── Reduced motion (OS 설정 존중) ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
 /* ── Base ── */
 html, body {
   height: 100%;
@@ -107,6 +116,40 @@ html, body {
 .null-btn__icon  { width: 1.82rem; height: 1.82rem; flex-shrink: 0; }   /* 구 20 */
 .null-btn__label { font-size: 0.91rem; font-weight: 400; white-space: nowrap; }  /* 구 10 */
 
+/* ── Align Card ── */
+.al-card { display: flex; flex-direction: column; gap: 0.27rem; }
+.al-row  { display: flex; gap: 0.18rem; align-items: stretch; height: 2.2rem; }
+.al-gap  { flex: 0 0 0.36rem; }
+.al-label { display: flex; align-items: center; padding: 0 0.45rem; font-size: 0.82rem; color: var(--text-disabled); }
+.al-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-btn);
+  border-radius: var(--radius-btn);
+  color: var(--text-secondary);
+  transition: var(--tr-btn);
+}
+.al-btn:hover  { background: var(--accent-glow); color: var(--accent); }
+.al-btn:active { background: var(--accent-deep); color: var(--accent-hover); }
+.al-btn--text  { font-size: 0.78rem; font-weight: 500; letter-spacing: 0.02em; }
+.al-icon { width: 1.09rem; height: 1.09rem; flex-shrink: 0; }
+.al-toggle {
+  flex: 0 0 auto;
+  padding: 0 0.55rem;
+  background: var(--bg-btn);
+  border-radius: var(--radius-btn);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  transition: var(--tr-btn);
+}
+.al-toggle:hover { background: var(--accent-glow); color: var(--accent); }
+.al-toggle[aria-pressed="true"] { background: var(--accent-deep); color: var(--accent-hover); }
+.al-row--z[hidden] { display: none; }
+
 /* ── Quote Align Button ── */
 .qa-row { display: flex; }
 .qa-btn {
@@ -127,6 +170,67 @@ html, body {
 .qa-btn:active { background: var(--accent-deep); color: var(--accent-hover); }
 .qa-btn__icon  { width: 1.27rem; height: 1.27rem; flex-shrink: 0; }
 .qa-btn__label { font-size: 0.91rem; font-weight: 400; white-space: nowrap; }
+
+/* ── Precomp Fit Row ── */
+.pf-row { display: flex; gap: 0.36rem; align-items: stretch; }
+.pf-btn { flex: 1; min-width: 0; }
+.pf-field {
+  display: flex;
+  align-items: center;
+  gap: 0.36rem;
+  height: 2.6rem;
+  padding: 0 0.55rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  color: var(--text-secondary);
+}
+.pf-field__key { font-size: 0.82rem; }
+.pf-input {
+  width: 2.9rem;
+  height: 1.7rem;
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.91rem;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.pf-input::-webkit-outer-spin-button, .pf-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pf-input:focus { border-color: var(--accent); outline: none; }
+.pf-toggle {
+  height: 2.6rem;
+  padding: 0 0.73rem;
+  background: var(--bg-btn);
+  border-radius: var(--radius-btn);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: var(--tr-btn);
+}
+.pf-toggle:hover { background: var(--accent-glow); color: var(--accent); }
+.pf-toggle[aria-pressed="true"] { background: var(--accent-deep); color: var(--accent-hover); }
+
+/* ── Cloner Row ── */
+.cl-row { display: flex; gap: 0.36rem; align-items: stretch; }
+.cl-btn { flex: 1; min-width: 0; }
+.pf-select {
+  height: 2.6rem;
+  padding: 0 0.45rem;
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.pf-select:hover { color: var(--accent); }
+.pf-select:focus { border-color: var(--accent); outline: none; }
+.cl-remove { padding: 0 0.6rem; font-size: 1rem; line-height: 1; }
+.cl-remove:hover { background: var(--accent-glow); color: var(--danger); }
 
 /* ── Anchor Point Widget ── */
 .ap-widget {

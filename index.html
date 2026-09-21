@@ -15,7 +15,7 @@
     <div class="tool-row">
 
       <button class="null-btn" id="btn-create-green-null">
-        <svg class="null-btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg class="null-btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
           <line x1="10" y1="6" x2="10" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="6" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -25,54 +25,113 @@
 
       <div class="ap-widget">
 
-        <button class="ap-btn" data-h="0"   data-v="0"   title="Top Left">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(315 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="0"   data-v="0"   title="Top Left" aria-label="Anchor Top Left">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(315 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
-        <button class="ap-btn" data-h="0.5" data-v="0"   title="Top Center">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(0 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="0.5" data-v="0"   title="Top Center" aria-label="Anchor Top Center">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(0 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
-        <button class="ap-btn" data-h="1"   data-v="0"   title="Top Right">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(45 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="1"   data-v="0"   title="Top Right" aria-label="Anchor Top Right">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(45 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
 
-        <button class="ap-btn" data-h="0"   data-v="0.5" title="Middle Left">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(270 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="0"   data-v="0.5" title="Middle Left" aria-label="Anchor Middle Left">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(270 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
-        <button class="ap-btn ap-btn--center" data-h="0.5" data-v="0.5" title="Center">
-          <svg class="ap-icon" viewBox="0 0 16 16" fill="none">
+        <button class="ap-btn ap-btn--center" data-h="0.5" data-v="0.5" title="Center" aria-label="Anchor Center">
+          <svg class="ap-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
         </button>
-        <button class="ap-btn" data-h="1"   data-v="0.5" title="Middle Right">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(90 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="1"   data-v="0.5" title="Middle Right" aria-label="Anchor Middle Right">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(90 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
 
-        <button class="ap-btn" data-h="0"   data-v="1"   title="Bottom Left">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(225 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="0"   data-v="1"   title="Bottom Left" aria-label="Anchor Bottom Left">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(225 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
-        <button class="ap-btn" data-h="0.5" data-v="1"   title="Bottom Center">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(180 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="0.5" data-v="1"   title="Bottom Center" aria-label="Anchor Bottom Center">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(180 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
-        <button class="ap-btn" data-h="1"   data-v="1"   title="Bottom Right">
-          <svg class="ap-icon" viewBox="0 0 16 16"><g transform="rotate(135 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
+        <button class="ap-btn" data-h="1"   data-v="1"   title="Bottom Right" aria-label="Anchor Bottom Right">
+          <svg class="ap-icon" viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(135 8 8)"><path d="M8,3 L12,10.5 L4,10.5 Z"/></g></svg>
         </button>
 
+      </div>
+    </div>
+
+    <!-- Align (3D 레이어에서도 동작하는 정렬/분배) -->
+    <div class="al-card">
+      <div class="al-row">
+        <button class="al-btn" data-axis="x" data-mode="min" title="Align Left" aria-label="Align Left"><svg class="al-icon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M48 40v176a8 8 0 0 1-16 0V40a8 8 0 0 1 16 0m16 64V64a16 16 0 0 1 16-16h96a16 16 0 0 1 16 16v40a16 16 0 0 1-16 16H80a16 16 0 0 1-16-16m16 0h96V64H80Zm152 48v40a16 16 0 0 1-16 16H80a16 16 0 0 1-16-16v-40a16 16 0 0 1 16-16h136a16 16 0 0 1 16 16m-16 40v-40H80v40z"/></svg></button>
+        <button class="al-btn" data-axis="x" data-mode="center" title="Align Center (X)" aria-label="Align Center (X)"><svg class="al-icon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M208 136h-72v-16h48a16 16 0 0 0 16-16V64a16 16 0 0 0-16-16h-48V32a8 8 0 0 0-16 0v16H72a16 16 0 0 0-16 16v40a16 16 0 0 0 16 16h48v16H48a16 16 0 0 0-16 16v40a16 16 0 0 0 16 16h72v16a8 8 0 0 0 16 0v-16h72a16 16 0 0 0 16-16v-40a16 16 0 0 0-16-16M72 64h112v40H72Zm136 128H48v-40h160z"/></svg></button>
+        <button class="al-btn" data-axis="x" data-mode="max" title="Align Right" aria-label="Align Right"><svg class="al-icon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224 40v176a8 8 0 0 1-16 0V40a8 8 0 0 1 16 0m-32 24v40a16 16 0 0 1-16 16H80a16 16 0 0 1-16-16V64a16 16 0 0 1 16-16h96a16 16 0 0 1 16 16m-16 0H80v40h96Zm16 88v40a16 16 0 0 1-16 16H40a16 16 0 0 1-16-16v-40a16 16 0 0 1 16-16h136a16 16 0 0 1 16 16m-16 0H40v40h136Z"/></svg></button>
+        <button class="al-btn" data-axis="y" data-mode="min" title="Align Top" aria-label="Align Top"><svg class="al-icon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224 40a8 8 0 0 1-8 8H40a8 8 0 0 1 0-16h176a8 8 0 0 1 8 8m-16 40v96a16 16 0 0 1-16 16h-40a16 16 0 0 1-16-16V80a16 16 0 0 1 16-16h40a16 16 0 0 1 16 16m-16 0h-40v96h40Zm-72 0v136a16 16 0 0 1-16 16H64a16 16 0 0 1-16-16V80a16 16 0 0 1 16-16h40a16 16 0 0 1 16 16m-16 0H64v136h40Z"/></svg></button>
+        <button class="al-btn" data-axis="y" data-mode="center" title="Align Middle (Y)" aria-label="Align Middle (Y)"><svg class="al-icon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224 120h-16V72a16 16 0 0 0-16-16h-40a16 16 0 0 0-16 16v48h-16V48a16 16 0 0 0-16-16H64a16 16 0 0 0-16 16v72H32a8 8 0 0 0 0 16h16v72a16 16 0 0 0 16 16h40a16 16 0 0 0 16-16v-72h16v48a16 16 0 0 0 16 16h40a16 16 0 0 0 16-16v-48h16a8 8 0 0 0 0-16m-120 88H64V48h40Zm88-24h-40V72h40Z"/></svg></button>
+        <button class="al-btn" data-axis="y" data-mode="max" title="Align Bottom" aria-label="Align Bottom"><svg class="al-icon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224 216a8 8 0 0 1-8 8H40a8 8 0 0 1 0-16h176a8 8 0 0 1 8 8m-88-40V80a16 16 0 0 1 16-16h40a16 16 0 0 1 16 16v96a16 16 0 0 1-16 16h-40a16 16 0 0 1-16-16m16 0h40V80h-40Zm-104 0V40a16 16 0 0 1 16-16h40a16 16 0 0 1 16 16v136a16 16 0 0 1-16 16H64a16 16 0 0 1-16-16m16 0h40V40H64Z"/></svg></button>
+        <span class="al-gap" aria-hidden="true"></span>
+        <button class="al-btn al-btn--text" data-axis="x" data-mode="distribute" title="Distribute X (centers)" aria-label="Distribute X">⇹X</button>
+        <button class="al-btn al-btn--text" data-axis="y" data-mode="distribute" title="Distribute Y (centers)" aria-label="Distribute Y">⇹Y</button>
+        <span class="al-gap" aria-hidden="true"></span>
+        <button class="al-toggle" id="al-ref" type="button" aria-pressed="false" title="정렬 기준: 끄면 선택 영역, 켜면 컴프">Comp</button>
+        <button class="al-toggle" id="al-z" type="button" aria-pressed="false" title="Z 축 정렬 행 표시 (3D 레이어 전용)">Z</button>
+      </div>
+      <div class="al-row al-row--z" id="al-z-row" hidden>
+        <span class="al-label">Z</span>
+        <button class="al-btn al-btn--text" data-axis="z" data-mode="min"    title="Align Front (min Z)" aria-label="Align Front">Front</button>
+        <button class="al-btn al-btn--text" data-axis="z" data-mode="center" title="Align Center (Z)" aria-label="Align Center Z">Mid</button>
+        <button class="al-btn al-btn--text" data-axis="z" data-mode="max"    title="Align Back (max Z)" aria-label="Align Back">Back</button>
+        <button class="al-btn al-btn--text" data-axis="z" data-mode="distribute" title="Distribute Z (centers)" aria-label="Distribute Z">⇹Z</button>
       </div>
     </div>
 
     <!-- Quote Align (따옴표 정렬) -->
     <div class="qa-row">
       <button class="qa-btn" id="btn-quote-align" title="따옴표 정렬 — 인용 자막의 여는 따옴표를 본문 정렬선 밖으로">
-        <!-- ▼ 아이콘 자리 : 직접 제작한 아이콘으로 교체 (viewBox 0 0 20 20 권장) -->
-        <svg class="qa-btn__icon" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-          <path d="M5.1 4.8C3.3 5.8 2.2 7.4 2.2 9.4c0 1.6 1 2.7 2.4 2.7 1.2 0 2.1-.9 2.1-2 0-1.1-.8-1.9-1.9-1.9h-.2c.2-1 .8-1.8 1.9-2.4L5.1 4.8z"/>
-          <path d="M11.1 4.8c-1.8 1-2.9 2.6-2.9 4.6 0 1.6 1 2.7 2.4 2.7 1.2 0 2.1-.9 2.1-2 0-1.1-.8-1.9-1.9-1.9h-.2c.2-1 .8-1.8 1.9-2.4l-1.4-1z"/>
-          <line x1="16.2" y1="4.6" x2="16.2" y2="15.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <!-- Phosphor Icons `quotes` (regular) — https://phosphoricons.com (MIT) -->
+        <svg class="qa-btn__icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M100 56H40a16 16 0 0 0-16 16v64a16 16 0 0 0 16 16h60v8a32 32 0 0 1-32 32a8 8 0 0 0 0 16a48.05 48.05 0 0 0 48-48V72a16 16 0 0 0-16-16m0 80H40V72h60Zm116-80h-60a16 16 0 0 0-16 16v64a16 16 0 0 0 16 16h60v8a32 32 0 0 1-32 32a8 8 0 0 0 0 16a48.05 48.05 0 0 0 48-48V72a16 16 0 0 0-16-16m0 80h-60V72h60Z"/>
         </svg>
-        <!-- ▲ 아이콘 자리 끝 -->
         <span class="qa-btn__label">Quote Align</span>
       </button>
+    </div>
+
+    <!-- Precomp Fit (프리컴프 크기를 내용에 맞춤) -->
+    <div class="pf-row">
+      <button class="qa-btn pf-btn" id="btn-precomp-fit" title="Precomp Fit — 선택한 프리컴프(또는 현재 컴프)의 크기를 내부 레이어 경계에 맞춤">
+        <!-- Phosphor Icons `crop` (regular) -->
+        <svg class="qa-btn__icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M240 192a8 8 0 0 1-8 8h-32v32a8 8 0 0 1-16 0v-32H64a8 8 0 0 1-8-8V72H24a8 8 0 0 1 0-16h32V24a8 8 0 0 1 16 0v160h160a8 8 0 0 1 8 8M96 72h88v88a8 8 0 0 0 16 0V64a8 8 0 0 0-8-8H96a8 8 0 0 0 0 16"/>
+        </svg>
+        <span class="qa-btn__label">Precomp Fit</span>
+      </button>
+      <label class="pf-field" title="여백 (px)">
+        <span class="pf-field__key">Pad</span>
+        <input class="pf-input" id="pf-margin" type="number" min="0" step="1" value="0" inputmode="numeric" aria-label="여백 px">
+      </label>
+      <button class="pf-toggle" id="pf-all-frames" type="button" aria-pressed="false" title="전체 프레임(워크에어리어) 샘플링 — 끄면 현재 프레임만">All</button>
+    </div>
+
+    <!-- Cloner (C4D MoGraph Cloner 참고 — 컨트롤은 소스 레이어의 이펙트) -->
+    <div class="cl-row">
+      <button class="qa-btn cl-btn" id="btn-cloner" title="Cloner — 선택한 레이어를 복제하고 소스 레이어의 'Cloner' 이펙트로 배치 제어. 다시 누르면 Count 값으로 재복제">
+        <!-- Phosphor Icons `copy-simple` (regular) -->
+        <svg class="qa-btn__icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M184 64H40a8 8 0 0 0-8 8v144a8 8 0 0 0 8 8h144a8 8 0 0 0 8-8V72a8 8 0 0 0-8-8m-8 144H48V80h128Zm48-168v144a8 8 0 0 1-16 0V48H72a8 8 0 0 1 0-16h144a8 8 0 0 1 8 8"/>
+        </svg>
+        <span class="qa-btn__label">Cloner</span>
+      </button>
+      <label class="pf-field" title="클론 개수 (소스 포함)">
+        <span class="pf-field__key">N</span>
+        <input class="pf-input" id="cl-count" type="number" min="2" max="500" step="1" value="5" inputmode="numeric" aria-label="클론 개수">
+      </label>
+      <select class="pf-select" id="cl-mode" aria-label="클론 모드" title="초기 모드 (생성 후엔 소스 레이어의 Cloner Mode 로 변경)">
+        <option value="1">Linear</option>
+        <option value="2">Grid</option>
+        <option value="3">Radial</option>
+      </select>
+      <button class="pf-toggle cl-remove" id="btn-cloner-remove" type="button" title="선택한 소스의 클론 제거 (컨트롤은 유지)" aria-label="클론 제거">×</button>
     </div>
 
     <!-- Color Picker -->
@@ -85,7 +144,7 @@
 
           <!-- Color Picker (정사각, 좌측) — 스포이드(피펫) -->
           <button class="cp-pick-btn" id="cp-eyedropper-btn" title="Color Picker" aria-label="Color Picker">
-            <svg class="cp-pick-icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <svg class="cp-pick-icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M224 67.3a35.8 35.8 0 0 0-11.26-25.66c-14-13.28-36.72-12.78-50.62 1.13L142.8 62.2a24 24 0 0 0-33.14.77l-9 9a16 16 0 0 0 0 22.64l2 2.06l-51 51a39.75 39.75 0 0 0-10.53 38l-8 18.41A13.65 13.65 0 0 0 36 219.29a15.9 15.9 0 0 0 17.71 3.36L71.24 215a39.9 39.9 0 0 0 37.05-10.75l51-51l2.06 2.06a16 16 0 0 0 22.62 0l9-9a24 24 0 0 0 .74-33.18l19.75-19.87A35.75 35.75 0 0 0 224 67.3M97 193a24 24 0 0 1-24 6a8 8 0 0 0-5.55.31l-18.1 7.9l7.65-17.8a8 8 0 0 0 .25-5.75a24 24 0 0 1 .1-15.69H122Zm41-41H70.07l44-44l33.94 34Zm64.18-70l-25.37 25.52a8 8 0 0 0 0 11.31l4.89 4.88a8 8 0 0 1 0 11.32l-9 9L112 83.26l9-9a8 8 0 0 1 11.31 0l4.89 4.89a8 8 0 0 0 5.65 2.34a8 8 0 0 0 5.66-2.36l24.94-25.09c7.81-7.82 20.5-8.18 28.29-.81a20 20 0 0 1 .39 28.7Z"/>
             </svg>
           </button>
@@ -93,7 +152,7 @@
           <!-- 미리보기 색상 + hex 오버레이 (반투명 스트립 위 흰색) -->
           <div class="cp-preview" id="cp-preview">
             <button class="cp-icon-btn" id="cp-copy-btn" title="클립보드에 복사" aria-label="hex 복사">
-              <svg class="cp-btn-icon" viewBox="0 0 16 16" fill="none">
+              <svg class="cp-btn-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <rect x="5" y="2" width="8" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
                 <path d="M3 5v8a1 1 0 001 1h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
               </svg>
@@ -123,8 +182,8 @@
         <!-- 히스토리 (카드 안) -->
         <div class="cp-history-row">
           <div class="cp-history" id="cp-history"></div>
-          <button class="cp-clear-btn" id="cp-clear-btn" title="히스토리 초기화">
-            <svg viewBox="0 0 12 12" fill="none" width="10" height="10">
+          <button class="cp-clear-btn" id="cp-clear-btn" title="히스토리 초기화" aria-label="히스토리 초기화">
+            <svg viewBox="0 0 12 12" fill="none" width="10" height="10" aria-hidden="true">
               <line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               <line x1="10" y1="2" x2="2"  y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>

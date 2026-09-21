@@ -166,6 +166,7 @@ function cpRenderHistory() {
     btn.className        = 'cp-swatch';
     btn.style.background = hex;
     btn.title            = '#' + hex.replace('#', '').toUpperCase();
+    btn.setAttribute('aria-label', btn.title);
     btn.addEventListener('click', () => {
       cpUpdateUI(hex);
       const copyFallback = () => {
@@ -300,7 +301,7 @@ document.getElementById('btn-create-green-null').addEventListener('click', () =>
         let msg = res.parented > 0
           ? `"${res.name}" created — ${res.parented} layer(s) parented`
           : `"${res.name}" created`;
-        if (res.maskCentered) msg += ' · mask-centered';
+        if (res.centered) msg += ' · centered on selection';
         setStatus(msg, 'success');
       } else {
         setStatus('Error: ' + res.error, 'error');
@@ -329,6 +330,110 @@ document.getElementById('btn-quote-align').addEventListener('click', () => {
       } else {
         setStatus('Error: ' + res.error, 'error');
       }
+    } catch (e) {
+      setStatus('Unexpected response', 'error');
+    }
+  });
+});
+
+// ── Precomp Fit ───────────────────────────────────────────────
+
+const pfAllBtn = document.getElementById('pf-all-frames');
+pfAllBtn.addEventListener('click', () => {
+  const on = pfAllBtn.getAttribute('aria-pressed') !== 'true';
+  pfAllBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+});
+
+document.getElementById('btn-precomp-fit').addEventListener('click', () => {
+  const margin = Math.max(0, parseFloat(document.getElementById('pf-margin').value) || 0);
+  const mode   = pfAllBtn.getAttribute('aria-pressed') === 'true' ? 'all' : 'current';
+  setStatus(mode === 'all' ? 'Fitting precomp (all frames)...' : 'Fitting precomp...');
+  evalScript(`fitPrecomp(${margin}, "${mode}")`, (result) => {
+    try {
+      const res = JSON.parse(result);
+      if (res.success) {
+        const parts = res.fitted.map(f =>
+          `${f.name}: ${f.from[0]}×${f.from[1]} → ${f.to[0]}×${f.to[1]}` +
+          (f.instances ? ` (${f.instances} inst.)` : ''));
+        let msg = 'Precomp Fit — ' + parts.join(' · ');
+        if (res.warnings.length) msg += ` · ${res.warnings.length} warning(s)`;
+        setStatus(msg, res.warnings.length ? 'default' : 'success');
+        if (res.warnings.length) console.warn('Precomp Fit warnings:', res.warnings);
+      } else {
+        setStatus('Error: ' + res.error, 'error');
+      }
+    } catch (e) {
+      setStatus('Unexpected response', 'error');
+    }
+  });
+});
+
+// ── Align 3D ──────────────────────────────────────────────────
+
+const alRefBtn = document.getElementById('al-ref');
+const alZBtn   = document.getElementById('al-z');
+const alZRow   = document.getElementById('al-z-row');
+alRefBtn.addEventListener('click', () => {
+  const on = alRefBtn.getAttribute('aria-pressed') !== 'true';
+  alRefBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+});
+alZBtn.addEventListener('click', () => {
+  const on = alZBtn.getAttribute('aria-pressed') !== 'true';
+  alZBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  alZRow.hidden = !on;
+});
+
+document.querySelectorAll('.al-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const axis = btn.dataset.axis, mode = btn.dataset.mode;
+    const ref  = alRefBtn.getAttribute('aria-pressed') === 'true' ? 'comp' : 'selection';
+    setStatus(`Aligning ${axis.toUpperCase()} ${mode}...`);
+    evalScript(`alignLayers("${axis}", "${mode}", "${ref}")`, (result) => {
+      try {
+        const res = JSON.parse(result);
+        if (res.success) {
+          let msg = `Align ${axis.toUpperCase()} ${mode} (${ref}) — ${res.moved} moved`;
+          if (res.skipped) msg += `, ${res.skipped} skipped`;
+          if (res.warnings.length) { msg += `, ${res.warnings.length} warning(s)`; console.warn(res.warnings); }
+          setStatus(msg, 'success');
+        } else {
+          setStatus('Error: ' + res.error, 'error');
+        }
+      } catch (e) {
+        setStatus('Unexpected response', 'error');
+      }
+    });
+  });
+});
+
+// ── Cloner ────────────────────────────────────────────────────
+
+document.getElementById('btn-cloner').addEventListener('click', () => {
+  const count = Math.min(500, Math.max(2, parseInt(document.getElementById('cl-count').value, 10) || 5));
+  const mode  = document.getElementById('cl-mode').value;
+  setStatus('Cloning...');
+  evalScript(`createCloner(${count}, ${mode})`, (result) => {
+    try {
+      const res = JSON.parse(result);
+      if (res.success) {
+        setStatus(`${res.recloned ? 'Re-cloned' : 'Cloner'}: "${res.source}" × ${res.count} (${res.clones} clones)` +
+                  (res.recloned ? ' — count from Cloner Count slider' : ''), 'success');
+      } else {
+        setStatus('Error: ' + res.error, 'error');
+      }
+    } catch (e) {
+      setStatus('Unexpected response', 'error');
+    }
+  });
+});
+
+document.getElementById('btn-cloner-remove').addEventListener('click', () => {
+  setStatus('Removing clones...');
+  evalScript('removeClones()', (result) => {
+    try {
+      const res = JSON.parse(result);
+      if (res.success) setStatus(`Removed ${res.removed} clone(s)`, 'success');
+      else setStatus('Error: ' + res.error, 'error');
     } catch (e) {
       setStatus('Unexpected response', 'error');
     }
