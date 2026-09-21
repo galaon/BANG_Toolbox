@@ -789,6 +789,30 @@ function _pfToComp(probeProp, layerIndex, x, y, time) {
     return [v[0], v[1]];
 }
 
+// 레이어의 최대 Stroke 두께 / 2 (레이어 공간 px). 셰이프: 모든 Stroke 그래픽의 Width 최대값, 텍스트: strokeWidth
+function _pfMaxStrokeHalf(layer, time) {
+    var maxW = 0;
+    function walk(grp) {
+        for (var i = 1; i <= grp.numProperties; i++) {
+            var pr = grp.property(i);
+            if (!pr) continue;
+            if (pr.matchName === "ADBE Vector Graphic - Stroke") {
+                try { if (pr.enabled !== false) maxW = Math.max(maxW, pr.property("ADBE Vector Stroke Width").valueAtTime(time, false)); } catch (e1) {}
+            } else if (pr.propertyType !== undefined && pr.propertyType !== PropertyType.PROPERTY) {
+                try { walk(pr); } catch (e2) {}
+            }
+        }
+    }
+    try {
+        if (layer instanceof ShapeLayer) walk(layer.property("ADBE Root Vectors Group"));
+        else if (layer instanceof TextLayer) {
+            var d = layer.property("Source Text").valueAtTime(time, false);
+            if (d.applyStroke) maxW = Math.max(maxW, d.strokeWidth);
+        }
+    } catch (e) {}
+    return maxW / 2;
+}
+
 function _pfIsMeasurable(layer) {
     if (layer instanceof CameraLayer || layer instanceof LightLayer) return false;
     if (!layer.enabled) return false;
@@ -828,6 +852,10 @@ function _pfContentBounds(comp, mode, warns) {
                 if (tm < ly.inPoint || tm > ly.outPoint) continue;
                 var r;
                 try { r = ly.sourceRectAtTime(tm, false); } catch (eR) { continue; }
+                // Stroke 는 sourceRect 에 포함되지 않으므로 최대 두께의 절반만큼 경계를 넓힌다
+                // (extents=true 는 AE 가 과하게 넉넉한 박스를 돌려줘 사용하지 않음)
+                var sw = _pfMaxStrokeHalf(ly, tm);
+                if (sw > 0) r = { left: r.left - sw, top: r.top - sw, width: r.width + sw * 2, height: r.height + sw * 2 };
                 if (!r || !(r.width > 0) || !(r.height > 0)) continue;
                 var cs = [[r.left, r.top], [r.left + r.width, r.top],
                           [r.left, r.top + r.height], [r.left + r.width, r.top + r.height]];
@@ -959,7 +987,7 @@ function fitPrecomp(margin, mode) {
     }
 
     var results = [], warns = [];
-    app.beginUndoGroup("BANG Precomp Fit");
+    app.beginUndoGroup("BANG Precomp Crop");
     try {
         for (var t = 0; t < targets.length; t++) {
             var r = _pfFitOne(targets[t], margin, mode, warns);
@@ -1134,72 +1162,60 @@ function alignLayers(axis, mode, ref) {
 
 
 // ============================================================
-//  Cloner — Cinema 4D MoGraph Cloner 를 참고한 라이브 복제
-//  · 선택한 소스 레이어 1개에 "Cloner …" 컨트롤 이펙트를 삽입한다 (사용자 결정 사항).
-//  · 클론 = 소스의 복제본. 각 클론은 "Cloner Source"(Layer Control) 와
-//    "Clone Index"(Slider) 를 갖고, Position/Rotation/Scale/Opacity 표현식이
-//    소스의 컨트롤 값 + 자기 인덱스로 배치를 계산한다 → 생성 후에도 실시간 조정.
-//  · 소스 자신 = 클론 #0 (표현식 없음). 소스를 옮기면 전체가 따라온다.
-//    Radial 모드는 소스가 원 위(시작 각)에 놓이도록 원 중심을 역산한다.
-//  · Count 변경은 레이어 수를 바꿔야 하므로 버튼 재실행(Re-clone):
-//    소스에 이미 컨트롤이 있으면 기존 클론을 지우고 "Cloner Count" 값으로 다시 만든다.
+//  Cloner — Cinema 4D MoGraph Cloner 를 참고한 라이브 복제 (v1.3: 단일 Pseudo Effect)
+//  · 소스 레이어에 "BANG 클로너" 이펙트 하나(jsx/BANG_Cloner.ffx, Pseudo/BANG_Cloner)를 적용한다.
+//    항목: 배치 모드 · 복제 개수 · Linear{오프셋} · Grid{열 개수, 간격} ·
+//          Radial{반지름, 시작/끝 각도, 반지름 방향 정렬} · 단계 변화{회전/크기/불투명도 증가} ·
+//          랜덤{시드, 위치/회전/크기 랜덤}
+//  · 클론 = 소스 복제본(shy + lock, 라벨색). Position/Rotation/Scale/Opacity 표현식이
+//    소스 이펙트 값 + 자기 인덱스로 배치를 계산 → 이펙트 값을 바꾸면 실시간 반영.
+//    소스 자신 = 클론 #0(표현식 없음). 소스를 옮기면 전체가 따라온다.
+//  · "복제 개수" 변경은 레이어 수를 바꿔야 하므로 패널의 Cloner 버튼을 다시 누른다(Re-clone).
+//  · Bake(래스터라이즈): 클론의 표현식을 현재 값으로 굳히고 shy/lock 해제 → 독립 레이어.
 // ============================================================
 
-var CL_PREFIX = "Cloner ";
+var CL_FX_NAME  = "BANG 클로너";
+var CL_FX_MATCH = "Pseudo/BANG_Cloner";
+var CL_LABEL    = 11;   // 클론 라벨색 (Sea Foam)
 
 function _clFindEffect(layer, name) {
     var fx = layer.property("ADBE Effect Parade");
     for (var i = 1; i <= fx.numProperties; i++) if (fx.property(i).name === name) return fx.property(i);
     return null;
 }
-
-function _clAddControl(layer, matchName, name, value) {
+function _clFindClonerFx(layer) {
     var fx = layer.property("ADBE Effect Parade");
-    var ctl = fx.addProperty(matchName);
+    for (var i = 1; i <= fx.numProperties; i++) if (fx.property(i).matchName === CL_FX_MATCH) return fx.property(i);
+    return null;
+}
+function _clAddControl(layer, matchName, name, value) {
+    var ctl = layer.property("ADBE Effect Parade").addProperty(matchName);
     ctl.name = name;
-    if (value !== undefined && value !== null) {
-        try { ctl.property(1).setValue(value); } catch (e) {}
-    }
+    if (value !== undefined && value !== null) { try { ctl.property(1).setValue(value); } catch (e) {} }
     return ctl;
 }
 
-// 소스 레이어에 컨트롤 세트 삽입 (이미 있으면 건너뜀). 반환: 새로 만들었는지
-function _clEnsureControls(src, count, modeIndex) {
-    if (_clFindEffect(src, CL_PREFIX + "Count") !== null) return false;
-    var is3D = false;
-    try { is3D = src.threeDLayer === true; } catch (e) {}
-
-    // Mode: Dropdown(AE 17+) — 실패 시 Slider(1=Linear 2=Grid 3=Radial)
-    var modeCtl = null;
-    try {
-        modeCtl = _clAddControl(src, "ADBE Dropdown Control", CL_PREFIX + "Mode");
-        var menu = modeCtl.property(1).setPropertyParameters(["Linear", "Grid", "Radial"]);
-        // setPropertyParameters 는 이펙트를 재생성하며 이름을 초기화한다 → 다시 지정
-        menu.parentProperty.name = CL_PREFIX + "Mode";
-        menu.setValue(modeIndex);
-    } catch (eDD) {
-        try { if (modeCtl) modeCtl.remove(); } catch (e2) {}
-        _clAddControl(src, "ADBE Slider Control", CL_PREFIX + "Mode", modeIndex);
+// 소스에 클로너 이펙트 확보. 반환: { fx, created }
+function _clEnsureEffect(src, ffxPath) {
+    var fx = _clFindClonerFx(src);
+    if (fx !== null) return { fx: fx, created: false };
+    var before = src.property("ADBE Effect Parade").numProperties;
+    var applied = false;
+    if (ffxPath) {
+        var f = new File(ffxPath);
+        if (f.exists) { try { src.applyPreset(f); applied = true; } catch (e1) {} }
     }
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Count", count);
-    _clAddControl(src, "ADBE Point3D Control", CL_PREFIX + "Offset", [120, 0, 0]);             // Linear: 클론당 오프셋
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Grid Columns", 3);
-    _clAddControl(src, "ADBE Point3D Control", CL_PREFIX + "Grid Spacing", [150, 150, 0]);
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Radius", 300);
-    _clAddControl(src, "ADBE Angle Control",   CL_PREFIX + "Start Angle", 0);
-    _clAddControl(src, "ADBE Angle Control",   CL_PREFIX + "End Angle", 360);
-    _clAddControl(src, "ADBE Checkbox Control",CL_PREFIX + "Align to Radius", 0);
-    _clAddControl(src, "ADBE Angle Control",   CL_PREFIX + "Step Rotation", 0);
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Step Scale %", 0);
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Step Opacity", 0);
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Random Seed", 1);
-    _clAddControl(src, "ADBE Point3D Control", CL_PREFIX + "Random Position", [0, 0, 0]);
-    _clAddControl(src, "ADBE Angle Control",   CL_PREFIX + "Random Rotation", 0);
-    _clAddControl(src, "ADBE Slider Control",  CL_PREFIX + "Random Scale %", 0);
-    return true;
+    if (!applied) {
+        // 이 PC 에 Pseudo 가 등록돼 있으면(개발기) 직접 추가
+        try { src.property("ADBE Effect Parade").addProperty(CL_FX_MATCH); applied = true; } catch (e2) {}
+    }
+    fx = _clFindClonerFx(src);
+    if (!applied || fx === null) throw new Error("클로너 이펙트를 적용하지 못했습니다 (BANG_Cloner.ffx 경로 확인: " + ffxPath + ")");
+    fx.name = CL_FX_NAME;
+    return { fx: fx, created: true };
 }
 
-// 클론 판별: Clone Index + Cloner Source 이펙트를 갖고, Source 가 src 를 가리키는 레이어
+// 클론 판별: Clone Index + Cloner Source(Layer Control) 가 src 를 가리키는 레이어
 function _clFindClones(comp, src) {
     var out = [];
     for (var i = 1; i <= comp.numLayers; i++) {
@@ -1209,161 +1225,3010 @@ function _clFindClones(comp, src) {
         var ref = _clFindEffect(ly, "Cloner Source");
         if (idx === null || ref === null) continue;
         var target = null;
-        try { target = ref.property(1).value; } catch (e) {}   // Layer Control → 레이어 index
+        try { target = ref.property(1).value; } catch (e) {}
         if (target === src.index) out.push(ly);
     }
     return out;
 }
 
-// ── 표현식 텍스트 ────────────────────────────────────────────
-// 공통 프리앰블: 소스·인덱스·모드·카운트
+// ── 표현식 텍스트 (파라미터는 한글 이름으로 참조) ─────────────
 var CL_EXPR_HEAD =
     'var src = effect("Cloner Source")(1);\n' +
     'var i = effect("Clone Index")(1).value;\n' +
-    'function C(n){ return src.effect("Cloner " + n)(1); }\n' +
-    'var mode = Math.round(C("Mode").value);\n' +
-    'var n = Math.max(1, Math.round(C("Count").value));\n' +
-    'seedRandom(C("Random Seed").value + i, true);\n';
+    'var FX = src.effect("' + CL_FX_NAME + '");\n' +
+    'function C(n){ return FX(n); }\n' +
+    'var mode = Math.round(C("배치 모드").value);\n' +
+    'var n = Math.max(1, Math.round(C("복제 개수").value));\n' +
+    'seedRandom(C("시드").value + i, true);\n';
 
 var CL_EXPR_ANGLE =
-    'var a0 = degreesToRadians(C("Start Angle").value), a1 = degreesToRadians(C("End Angle").value);\n' +
+    'var a0 = degreesToRadians(C("시작 각도").value), a1 = degreesToRadians(C("끝 각도").value);\n' +
     'var span = a1 - a0;\n' +
     'var full = Math.abs(Math.abs(span) - 2*Math.PI) < 1e-6;\n' +
-    'var t = 0; if (full) { t = i / n; } else if (n > 1) { t = i / (n - 1); }\n' +   // 레거시 표현식 엔진의 중첩 삼항 버그 회피
+    'var t = 0; if (full) { t = i / n; } else if (n > 1) { t = i / (n - 1); }\n' +
     'var ang = a0 + span * t;\n';
 
 function _clExprPosition(is3D) {
     return CL_EXPR_HEAD +
     'var base = src.transform.position.value;\n' +
     'if (base.length < 3) base = [base[0], base[1], 0];\n' +
+    // 소스 스케일에 배치도 연동: 소스를 키우면 간격·반지름도 같은 비율로 커진다 (전체가 하나처럼 스케일)
+    'var ss = src.transform.scale.value; var sf = [ss[0] / 100, ss[1] / 100, (ss.length > 2 ? ss[2] : 100) / 100];\n' +
     'var p = base;\n' +
     'if (mode == 1) {\n' +
-    '  var off = C("Offset").value; p = base + off * i;\n' +
+    '  var off = C("오프셋").value; p = base + [off[0] * sf[0], off[1] * sf[1], off[2] * sf[2]] * i;\n' +
     '} else if (mode == 2) {\n' +
-    '  var cols = Math.max(1, Math.round(C("Grid Columns").value));\n' +
-    '  var sp = C("Grid Spacing").value;\n' +
-    '  p = base + [sp[0] * (i % cols), sp[1] * Math.floor(i / cols), 0];\n' +
+    '  var cols = Math.max(1, Math.round(C("열 개수").value));\n' +
+    '  var sp = C("간격").value;\n' +
+    '  p = base + [sp[0] * sf[0] * (i % cols), sp[1] * sf[1] * Math.floor(i / cols), 0];\n' +
     '} else {\n' +
     CL_EXPR_ANGLE +
-    '  var r = C("Radius").value;\n' +
-    '  var center = base - [Math.cos(a0) * r, Math.sin(a0) * r, 0];\n' +   // 소스(i=0)가 시작각에 오도록
-    '  p = center + [Math.cos(ang) * r, Math.sin(ang) * r, 0];\n' +
+    '  var r = C("반지름").value;\n' +
+    '  var center = base - [Math.cos(a0) * r * sf[0], Math.sin(a0) * r * sf[1], 0];\n' +
+    '  p = center + [Math.cos(ang) * r * sf[0], Math.sin(ang) * r * sf[1], 0];\n' +
     '}\n' +
-    'var rp = C("Random Position").value;\n' +
+    'var rp = C("위치 랜덤").value;\n' +
     'p = p + [random(-rp[0], rp[0]), random(-rp[1], rp[1]), random(-rp[2], rp[2])];\n' +
     (is3D ? 'p' : '[p[0], p[1]]');
 }
-
 function _clExprRotation() {
     return CL_EXPR_HEAD +
-    'var rot = src.transform.rotation.value + C("Step Rotation").value * i;\n' +
-    'if (mode == 3 && C("Align to Radius").value == 1) {\n' +
+    'var rot = src.transform.rotation.value + C("회전 증가").value * i;\n' +
+    'if (mode == 3 && C("반지름 방향 정렬").value == 1) {\n' +
     CL_EXPR_ANGLE +
     '  rot += radiansToDegrees(ang - a0);\n' +
     '}\n' +
-    'var rr = C("Random Rotation").value;\n' +
+    'var rr = C("회전 랜덤").value;\n' +
     'rot + random(-rr, rr)';
 }
-
 function _clExprScale(is3D) {
     return CL_EXPR_HEAD +
     'var s = src.transform.scale.value;\n' +
-    'var f = 1 + (C("Step Scale %").value / 100) * i;\n' +
-    'var rs = C("Random Scale %").value / 100;\n' +
+    'var f = 1 + (C("크기 증가 %").value / 100) * i;\n' +
+    'var rs = C("크기 랜덤 %").value / 100;\n' +
     'f = f * (1 + random(-rs, rs));\n' +
     'if (f < 0) f = 0;\n' +
     (is3D ? '[s[0] * f, s[1] * f, (s.length > 2 ? s[2] : 100) * f]' : '[s[0] * f, s[1] * f]');
 }
-
 function _clExprOpacity() {
     return CL_EXPR_HEAD +
-    'clamp(src.transform.opacity.value + C("Step Opacity").value * i, 0, 100)';
+    'clamp(src.transform.opacity.value + C("불투명도 증가").value * i, 0, 100)';
 }
-
 function _clPad3(n) { return (n < 10 ? "00" : (n < 100 ? "0" : "")) + n; }
 
-// 패널 진입점
-//   count: 총 개수(소스 포함). modeIndex: 1 Linear · 2 Grid · 3 Radial (최초 생성 시 초기값)
-function createCloner(count, modeIndex) {
+// 선택에서 소스 찾기: 소스 자체 또는 그 클론을 선택해도 소스로 귀결
+function _clResolveSource(comp) {
+    var sel = comp.selectedLayers;
+    if (sel.length !== 1) return null;
+    var l = sel[0];
+    var ref = _clFindEffect(l, "Cloner Source");
+    if (ref !== null && _clFindEffect(l, "Clone Index") !== null) {
+        try { var idx = ref.property(1).value; if (idx >= 1 && idx <= comp.numLayers) return comp.layer(idx); } catch (e) {}
+    }
+    return l;
+}
+
+var CL_BAKE_PARAM = "래스터라이즈";   // 접두어 매칭 (AE 가 긴 파라미터 이름을 잘라 표시함)
+function _clFindParamByPrefix(fx, prefix) {
+    for (var i = 1; i <= fx.numProperties; i++) if (fx.property(i).name.indexOf(prefix) === 0) return fx.property(i);
+    return null;
+}
+
+// 클론 생성/갱신 본체. count 는 소스 포함 총 개수(1 이면 클론 없음)
+function _clBuildClones(comp, src, count, is3D) {
+    var old = _clFindClones(comp, src);
+    for (var o = old.length - 1; o >= 0; o--) { old[o].locked = false; old[o].remove(); }
+    var wasLocked = src.locked; src.locked = false;
+    var baseName = src.name, made = [], prev = src;
+    for (var k = 1; k < count; k++) {
+        var cl = src.duplicate();
+        cl.moveAfter(prev);
+        prev = cl;
+        cl.name = baseName + " • " + _clPad3(k);
+        cl.selected = false;
+        var cfx = _clFindClonerFx(cl);
+        if (cfx !== null) cfx.remove();                       // 클로너 이펙트는 소스에만
+        var refCtl = _clAddControl(cl, "ADBE Layer Control", "Cloner Source");
+        refCtl.property(1).setValue(src.index);
+        _clAddControl(cl, "ADBE Slider Control", "Clone Index", k);
+        var tg = cl.property("ADBE Transform Group");
+        var pos = tg.property("ADBE Position");
+        if (pos.dimensionsSeparated) pos.dimensionsSeparated = false;
+        pos.expression = _clExprPosition(is3D);
+        var rotProp = tg.property("ADBE Rotate Z");
+        if (rotProp) rotProp.expression = _clExprRotation();
+        tg.property("ADBE Scale").expression = _clExprScale(is3D);
+        tg.property("ADBE Opacity").expression = _clExprOpacity();
+        cl.label = CL_LABEL;
+        cl.shy = true;
+        cl.locked = true;
+        made.push(cl);
+    }
+    src.locked = wasLocked;
+    if (made.length > 0) comp.hideShyLayers = true;          // 타임라인엔 소스만
+    return made;
+}
+
+// 패널 진입점 (버튼 하나) — 모든 설정은 소스 레이어의 "BANG 클로너" 이펙트
+//   · 이펙트 없음            → jsx/BANG_Cloner.ffx 적용(기본값 5개, Linear) + 복제
+//   · 이펙트 있음            → "복제 개수"/"배치 모드" 로 갱신 (개수 1 = 클론 제거)
+//   · "래스터라이즈" 체크    → 클론을 독립 레이어로 굳히고 이펙트 제거
+//   ffxPath: 확장 폴더의 BANG_Cloner.ffx 절대 경로(패널이 넘김)
+function applyCloner(ffxPath) {
     var comp = app.project ? app.project.activeItem : null;
     if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
-    var sel = comp.selectedLayers;
-    if (sel.length !== 1) return err("소스 레이어를 하나만 선택해 주세요.");
-    var src = sel[0];
+    var src = _clResolveSource(comp);
+    if (src === null) return err("소스 레이어를 하나만 선택해 주세요.");
     if (src instanceof CameraLayer || src instanceof LightLayer) return err("카메라·라이트는 복제할 수 없습니다.");
-    if (_clFindEffect(src, "Clone Index") !== null) return err("클론이 아닌 소스 레이어를 선택해 주세요.");
-
-    count = Math.round(parseFloat(count));
-    if (isNaN(count) || count < 2) count = 2;
-    if (count > 500) count = 500;
-    modeIndex = Math.round(parseFloat(modeIndex)); if (!(modeIndex >= 1 && modeIndex <= 3)) modeIndex = 1;
-
     var is3D = false;
     try { is3D = src.threeDLayer === true; } catch (e) {}
 
     app.beginUndoGroup("BANG Cloner");
     try {
-        var created = _clEnsureControls(src, count, modeIndex);
-        if (!created) {
-            // Re-clone: 소스의 Count 슬라이더가 정본
-            var cnt = _clFindEffect(src, CL_PREFIX + "Count");
-            var v = Math.round(cnt.property(1).value);
-            if (v >= 2 && v <= 500) count = v; else cnt.property(1).setValue(count);
+        var got = _clEnsureEffect(src, ffxPath);
+        var fx = got.fx;
+
+        // 래스터라이즈 체크 → bake
+        var bakeOn = false;
+        try { var bp = _clFindParamByPrefix(fx, CL_BAKE_PARAM); if (bp) bakeOn = (bp.value === true || bp.value === 1); } catch (eB) {}
+        if (!got.created && bakeOn) {
+            var n = _clBakeClones(comp, src);
+            app.endUndoGroup();
+            return ok({ action: "baked", source: src.name, baked: n });
         }
-        // 기존 클론 제거
-        var old = _clFindClones(comp, src);
-        for (var o = old.length - 1; o >= 0; o--) old[o].remove();
 
-        // 소스 이름에서 기존 번호 접미 제거 없이 그대로 사용
-        var baseName = src.name;
-        var made = [];
-        var prev = src;
-        for (var k = 1; k < count; k++) {
-            var cl = src.duplicate();
-            cl.moveAfter(prev);
-            prev = cl;
-            cl.name = baseName + " • " + _clPad3(k);
-            cl.selected = false;
-
-            // 복제된 Cloner 컨트롤 제거 (컨트롤은 소스에만)
-            var fx = cl.property("ADBE Effect Parade");
-            for (var f = fx.numProperties; f >= 1; f--) {
-                if (fx.property(f).name.indexOf(CL_PREFIX) === 0) fx.property(f).remove();
-            }
-            var refCtl = _clAddControl(cl, "ADBE Layer Control", "Cloner Source");
-            refCtl.property(1).setValue(src.index);
-            _clAddControl(cl, "ADBE Slider Control", "Clone Index", k);
-
-            var tg = cl.property("ADBE Transform Group");
-            var pos = tg.property("ADBE Position");
-            if (pos.dimensionsSeparated) pos.dimensionsSeparated = false;
-            pos.expression = _clExprPosition(is3D);
-            var rotProp = tg.property("ADBE Rotate Z");
-            if (rotProp) rotProp.expression = _clExprRotation();
-            tg.property("ADBE Scale").expression = _clExprScale(is3D);
-            tg.property("ADBE Opacity").expression = _clExprOpacity();
-            made.push(cl);
-        }
+        var count = Math.round(fx.property("복제 개수").value);
+        if (isNaN(count) || count < 1) count = 1;
+        if (count > 500) count = 500;
+        var made = _clBuildClones(comp, src, count, is3D);
         src.selected = true;
         app.endUndoGroup();
-        return ok({ source: src.name, count: count, clones: made.length, recloned: !created, is3D: is3D });
+        var action = got.created ? "created" : (count <= 1 ? "removed" : "recloned");
+        return ok({ action: action, source: src.name, count: count, clones: made.length, is3D: is3D });
     } catch (eMain) {
         app.endUndoGroup();
-        return err(eMain.toString());
+        return err(eMain.message || eMain.toString());
     }
 }
 
-// 클론 제거(소스 선택 상태에서) — 컨트롤은 남김
+// ── 네이티브 이펙트 (native/*.aex — BANG Cloner · BANG Stroke) ──
+// 선택한 레이어마다 matchName 이펙트를 추가(이미 있으면 그대로). 플러그인 미설치면 {missing:true}
+function applyNativeEffect(matchName) {
+    var comp = app.project ? app.project.activeItem : null;
+    if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
+    var loaded = false;
+    for (var i = 0; i < app.effects.length; i++) if (app.effects[i].matchName === matchName) { loaded = true; break; }
+    if (!loaded) return ok({ missing: true, effect: matchName });
+    var layers = comp.selectedLayers.slice(0);
+    if (layers.length === 0) return err("레이어를 선택해 주세요.");
+    app.beginUndoGroup(matchName);
+    var added = 0, kept = 0;
+    try {
+        for (var j = 0; j < layers.length; j++) {
+            var L = layers[j];
+            if (L instanceof CameraLayer || L instanceof LightLayer) continue;
+            var parade = L.property("ADBE Effect Parade");
+            if (!parade) continue;
+            var found = null;
+            for (var k = 1; k <= parade.numProperties; k++) if (parade.property(k).matchName === matchName) { found = parade.property(k); break; }
+            if (found) { kept++; continue; }
+            parade.addProperty(matchName);
+            added++;
+        }
+        app.endUndoGroup();
+        return ok({ effect: matchName, added: added, kept: kept });
+    } catch (e) {
+        app.endUndoGroup();
+        return err(e.message || e.toString());
+    }
+}
+
+// (하위 호환) 이전 진입점
+function createCloner(count, modeIndex, ffxPath) { return applyCloner(ffxPath); }
+
+// 패널 자동 갱신용 상태 조회 (가벼움): 선택이 클로너 소스/클론이면 {count, clones, bake}
+function clonerPollState() {
+    try {
+        var comp = app.project ? app.project.activeItem : null;
+        if (!(comp && comp instanceof CompItem)) return ok({ active: false });
+        var src = _clResolveSource(comp);
+        if (src === null) return ok({ active: false });
+        var fx = _clFindClonerFx(src);
+        if (fx === null) return ok({ active: false });
+        var bake = false;
+        try { var bp = _clFindParamByPrefix(fx, CL_BAKE_PARAM); if (bp) bake = (bp.value === true || bp.value === 1); } catch (e0) {}
+        return ok({ active: true, source: src.name, count: Math.round(fx.property("복제 개수").value),
+                    clones: _clFindClones(comp, src).length, bake: bake });
+    } catch (e) { return ok({ active: false }); }
+}
+
+// 클론 제거(소스 또는 클론 선택) — 이펙트는 남김
 function removeClones() {
     var comp = app.project ? app.project.activeItem : null;
     if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
-    var sel = comp.selectedLayers;
-    if (sel.length !== 1) return err("소스 레이어를 하나만 선택해 주세요.");
-    var src = sel[0];
+    var src = _clResolveSource(comp);
+    if (src === null) return err("소스 레이어를 하나만 선택해 주세요.");
     var old = _clFindClones(comp, src);
     if (old.length === 0) return err("이 레이어의 클론이 없습니다.");
     app.beginUndoGroup("BANG Cloner Remove");
-    for (var o = old.length - 1; o >= 0; o--) old[o].remove();
+    for (var o = old.length - 1; o >= 0; o--) { old[o].locked = false; old[o].remove(); }
+    src.selected = true;
     app.endUndoGroup();
     return ok({ removed: old.length });
+}
+
+// Bake(래스터라이즈): 클론을 독립 레이어로 굳힘 — 표현식 → 현재 시간 값, shy/lock 해제, 참조 이펙트 제거, 소스의 클로너 이펙트 제거
+function _clBakeClones(comp, src) {
+    var clones = _clFindClones(comp, src);
+    if (clones.length === 0) throw new Error("이 레이어의 클론이 없습니다.");
+    var t = comp.time;
+    var names = ["ADBE Position", "ADBE Rotate Z", "ADBE Scale", "ADBE Opacity"];
+    for (var c = 0; c < clones.length; c++) {
+        var cl = clones[c];
+        cl.locked = false;
+        var tg = cl.property("ADBE Transform Group");
+        for (var n = 0; n < names.length; n++) {
+            var p = tg.property(names[n]);
+            if (!p || !p.expressionEnabled) continue;
+            var v = p.valueAtTime(t, false);
+            p.expression = "";
+            if (p.numKeys > 0) p.setValueAtTime(t, v); else p.setValue(v);
+        }
+        var e1 = _clFindEffect(cl, "Clone Index");  if (e1) e1.remove();
+        var e2 = _clFindEffect(cl, "Cloner Source"); if (e2) e2.remove();
+        cl.shy = false;
+        cl.label = src.label;
+        cl.selected = true;
+    }
+    var fx = _clFindClonerFx(src);
+    if (fx !== null) fx.remove();
+    src.selected = true;
+    return clones.length;
+}
+function bakeClones() {
+    var comp = app.project ? app.project.activeItem : null;
+    if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
+    var src = _clResolveSource(comp);
+    if (src === null) return err("소스 레이어를 하나만 선택해 주세요.");
+    app.beginUndoGroup("BANG Cloner Bake");
+    try { var n = _clBakeClones(comp, src); app.endUndoGroup(); return ok({ baked: n }); }
+    catch (e) { app.endUndoGroup(); return err(e.message || e.toString()); }
+}
+
+// ============================================================
+//  Bento Grid — BentoGrid.jsx v1.3.0 (방명환) 이식
+//  · 원본 엔진(타일 크기 배정·빔/그리디 패킹·크롭 마스크·마스크 정리)을 그대로 가져오고,
+//    ScriptUI 팔레트 대신 패널이 넘긴 설정 객체를 원본 readUISettings 가 읽는 형태(ui 셈)로 연결한다.
+//  · 원본의 alert()는 클로저 안에서 메시지 수집 함수로 대체 → 패널 상태바로 전달.
+// ============================================================
+var BANG_Bento = (function () {
+    var __messages = [];
+    function alert(message) { __messages.push(String(message)); }
+    function confirm() { return true; }
+
+    var SCRIPT_NAME = "Bento Grid";
+    var VERSION = "1.3.0";
+    var SETTINGS_SECTION = "BentoGridPanel_v1";
+    var CROP_MASK_NAME = "__BENTO_GRID_CROP__";
+    var EPSILON = 0.0001;
+    var MAX_COLUMNS = 500;
+    var MAX_EXPRESSION_LENGTH = 256;
+    var MAX_EXPRESSION_DEPTH = 32;
+    var randomCounter = 0;
+
+    function isFiniteNumber(value) {
+        return typeof value === "number" && !isNaN(value) && isFinite(value);
+    }
+
+    function clamp(value, minimum, maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    function trimText(value) {
+        return String(value).replace(/^\s+|\s+$/g, "");
+    }
+
+    function evaluateMathExpression(text, label) {
+        var source = trimText(text);
+        var index = 0;
+        var length = source.length;
+        var depth = 0;
+
+        function fail() {
+            throw new Error(label +
+                " must be a valid calculation using numbers, +, -, *, /, and parentheses.");
+        }
+
+        function skipWhitespace() {
+            while (index < length && /\s/.test(source.charAt(index))) {
+                index++;
+            }
+        }
+
+        function checked(value) {
+            if (!isFiniteNumber(value)) {
+                throw new Error(label + " calculation is too large or divides by zero.");
+            }
+            return value;
+        }
+
+        function parseNumber() {
+            var start;
+            var sawDigit = false;
+            var character;
+            var value;
+
+            skipWhitespace();
+            start = index;
+            while (index < length) {
+                character = source.charAt(index);
+                if (character >= "0" && character <= "9") {
+                    sawDigit = true;
+                    index++;
+                } else {
+                    break;
+                }
+            }
+            if (source.charAt(index) === ".") {
+                index++;
+                while (index < length) {
+                    character = source.charAt(index);
+                    if (character >= "0" && character <= "9") {
+                        sawDigit = true;
+                        index++;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if (!sawDigit) {
+                fail();
+            }
+            value = Number(source.substring(start, index));
+            return checked(value);
+        }
+
+        function parsePrimary() {
+            var value;
+
+            skipWhitespace();
+            if (source.charAt(index) === "(") {
+                index++;
+                depth++;
+                if (depth > MAX_EXPRESSION_DEPTH) {
+                    throw new Error(label + " calculation has too many nested parentheses.");
+                }
+                value = parseExpression();
+                skipWhitespace();
+                if (source.charAt(index) !== ")") {
+                    fail();
+                }
+                index++;
+                depth--;
+                return value;
+            }
+            return parseNumber();
+        }
+
+        function parseUnary() {
+            var sign = 1;
+            var character;
+
+            skipWhitespace();
+            character = source.charAt(index);
+            while (character === "+" || character === "-") {
+                if (character === "-") {
+                    sign = -sign;
+                }
+                index++;
+                skipWhitespace();
+                character = source.charAt(index);
+            }
+            return checked(sign * parsePrimary());
+        }
+
+        function parseTerm() {
+            var value = parseUnary();
+            var operator;
+            var right;
+
+            while (true) {
+                skipWhitespace();
+                operator = source.charAt(index);
+                if (operator !== "*" && operator !== "/") {
+                    break;
+                }
+                index++;
+                right = parseUnary();
+                if (operator === "/" && right === 0) {
+                    throw new Error(label + " calculation cannot divide by zero.");
+                }
+                value = checked(operator === "*" ? value * right : value / right);
+            }
+            return value;
+        }
+
+        function parseExpression() {
+            var value = parseTerm();
+            var operator;
+            var right;
+
+            while (true) {
+                skipWhitespace();
+                operator = source.charAt(index);
+                if (operator !== "+" && operator !== "-") {
+                    break;
+                }
+                index++;
+                right = parseTerm();
+                value = checked(operator === "+" ? value + right : value - right);
+            }
+            return value;
+        }
+
+        var result;
+
+        if (source.length === 0) {
+            fail();
+        }
+        if (source.length > MAX_EXPRESSION_LENGTH) {
+            throw new Error(label + " calculation is too long.");
+        }
+        result = parseExpression();
+        skipWhitespace();
+        if (index !== length) {
+            fail();
+        }
+        return checked(result);
+    }
+
+    function parsePositiveNumber(text, label, allowZero) {
+        var value = evaluateMathExpression(text, label);
+        var minimum = allowZero ? 0 : EPSILON;
+
+        if (value < minimum) {
+            throw new Error(label + (allowZero ? " must be 0 or greater." : " must be greater than 0."));
+        }
+        return value;
+    }
+
+    function getSavedSetting(key, fallback) {
+        try {
+            if (app.settings.haveSetting(SETTINGS_SECTION, key)) {
+                return app.settings.getSetting(SETTINGS_SECTION, key);
+            }
+        } catch (ignore) {
+        }
+        return fallback;
+    }
+
+    function saveSetting(key, value) {
+        try {
+            app.settings.saveSetting(SETTINGS_SECTION, key, String(value));
+        } catch (ignore) {
+        }
+    }
+
+    function saveUISettings(settings) {
+        saveSetting("unit", settings.unitExpression);
+        saveSetting("gap", settings.gapExpression);
+        saveSetting("width", settings.layoutWidthExpression);
+        saveSetting("fit", settings.fitMode);
+        saveSetting("variety", settings.tileVariety);
+        saveSetting("packingStyle", settings.packingStyle);
+        saveSetting("mixOrientations", settings.mixOrientations ? "1" : "0");
+        saveSetting("crop", settings.cropCover ? "1" : "0");
+        saveSetting("center", settings.centerLayout ? "1" : "0");
+    }
+
+    function RNG(seed) {
+        this.state = Math.floor(Math.abs(seed)) % 2147483647;
+        if (this.state <= 0) {
+            this.state += 2147483646;
+        }
+    }
+
+    RNG.prototype.next = function () {
+        this.state = (this.state * 16807) % 2147483647;
+        return (this.state - 1) / 2147483646;
+    };
+
+    function shuffledCopy(values, rng) {
+        var copy = values.slice(0);
+        var i;
+        var j;
+        var temp;
+
+        for (i = copy.length - 1; i > 0; i--) {
+            j = Math.floor(rng.next() * (i + 1));
+            temp = copy[i];
+            copy[i] = copy[j];
+            copy[j] = temp;
+        }
+        return copy;
+    }
+
+    function normalizedAngle(value) {
+        var angle = value % 360;
+        if (angle < 0) {
+            angle += 360;
+        }
+        return angle;
+    }
+
+    function propertyHasExpression(property) {
+        try {
+            return property.expressionEnabled === true;
+        } catch (ignore) {
+        }
+        return false;
+    }
+
+    function propertyIsStatic(property) {
+        if (!property) {
+            return false;
+        }
+        try {
+            if (property.numKeys > 0) {
+                return false;
+            }
+        } catch (ignoreKeys) {
+        }
+        return !propertyHasExpression(property);
+    }
+
+    function getStaticPositionProperties(transformGroup) {
+        var leader = transformGroup.property("ADBE Position");
+        var separated = false;
+        var xProperty;
+        var yProperty;
+
+        if (!leader) {
+            return null;
+        }
+
+        try {
+            separated = leader.dimensionsSeparated === true;
+        } catch (ignore) {
+            separated = false;
+        }
+
+        if (!separated) {
+            if (!propertyIsStatic(leader)) {
+                return null;
+            }
+            return {
+                separated: false,
+                leader: leader
+            };
+        }
+
+        xProperty = transformGroup.property("ADBE Position_0");
+        yProperty = transformGroup.property("ADBE Position_1");
+        if (!propertyIsStatic(xProperty) || !propertyIsStatic(yProperty)) {
+            return null;
+        }
+
+        return {
+            separated: true,
+            xProperty: xProperty,
+            yProperty: yProperty
+        };
+    }
+
+    function setStaticPosition(positionInfo, x, y) {
+        var current;
+
+        if (positionInfo.separated) {
+            positionInfo.xProperty.setValue(x);
+            positionInfo.yProperty.setValue(y);
+            return;
+        }
+
+        current = positionInfo.leader.value;
+        if (current && current.length > 2) {
+            positionInfo.leader.setValue([x, y, current[2]]);
+        } else {
+            positionInfo.leader.setValue([x, y]);
+        }
+    }
+
+    function layerLabel(layer) {
+        var name = "Layer";
+        try {
+            name = layer.name;
+        } catch (ignore) {
+        }
+        return "#" + layer.index + " " + name;
+    }
+
+    function inspectLayer(layer, comp, order) {
+        var source;
+        var isFootage = false;
+        var isPrecomp = false;
+        var transformGroup;
+        var anchorProperty;
+        var scaleProperty;
+        var rotationProperty;
+        var positionInfo;
+        var sourceWidth;
+        var sourceHeight;
+        var sourcePAR = 1;
+        var compPAR = 1;
+        var parX;
+        var angle;
+
+        try {
+            if (!(layer instanceof AVLayer) || !layer.hasVideo || layer.nullLayer || layer.adjustmentLayer) {
+                return {reason: "not a visual AV layer"};
+            }
+        } catch (typeError) {
+            return {reason: "unsupported layer type"};
+        }
+
+        if (layer.locked) {
+            return {reason: "locked"};
+        }
+        if (layer.threeDLayer) {
+            return {reason: "3D layer"};
+        }
+        if (layer.parent !== null) {
+            return {reason: "parented layer"};
+        }
+
+        try {
+            if (layer.hasTrackMatte || layer.isTrackMatte) {
+                return {reason: "track matte relationship"};
+            }
+        } catch (ignoreMatte) {
+        }
+
+        try {
+            source = layer.source;
+        } catch (sourceError) {
+            source = null;
+        }
+        if (!source) {
+            return {reason: "no measurable source"};
+        }
+
+        try {
+            isFootage = source instanceof FootageItem;
+        } catch (ignoreFootageType) {
+        }
+        try {
+            isPrecomp = source instanceof CompItem;
+        } catch (ignoreCompType) {
+        }
+        if (!isFootage && !isPrecomp) {
+            return {reason: "unsupported source type"};
+        }
+
+        if (isFootage) {
+            try {
+                if (source.footageMissing) {
+                    return {reason: "missing footage"};
+                }
+            } catch (ignoreMissing) {
+            }
+            try {
+                if (source.file === null) {
+                    return {reason: "solid or placeholder source"};
+                }
+            } catch (fileError) {
+                return {reason: "non-file footage source"};
+            }
+        }
+
+        try {
+            if (layer.collapseTransformation) {
+                return {reason: "continuous rasterization/collapse transformations"};
+            }
+        } catch (ignoreCollapse) {
+        }
+
+        transformGroup = layer.property("ADBE Transform Group");
+        if (!transformGroup) {
+            return {reason: "missing Transform group"};
+        }
+
+        anchorProperty = transformGroup.property("ADBE Anchor Point");
+        scaleProperty = transformGroup.property("ADBE Scale");
+        rotationProperty = transformGroup.property("ADBE Rotate Z");
+        positionInfo = getStaticPositionProperties(transformGroup);
+
+        if (!propertyIsStatic(anchorProperty) || !propertyIsStatic(scaleProperty) ||
+                !propertyIsStatic(rotationProperty) || !positionInfo) {
+            return {reason: "animated or expression-driven Transform"};
+        }
+
+        angle = normalizedAngle(Number(rotationProperty.value));
+        if (!isFiniteNumber(angle)) {
+            return {reason: "invalid Rotation value"};
+        }
+        if (angle > EPSILON && angle < 360 - EPSILON) {
+            return {reason: "rotated layer"};
+        }
+
+        try {
+            sourceWidth = Number(layer.width);
+            sourceHeight = Number(layer.height);
+        } catch (dimensionError) {
+            return {reason: "unreadable source dimensions"};
+        }
+        if (!isFiniteNumber(sourceWidth) || !isFiniteNumber(sourceHeight) ||
+                sourceWidth <= 0 || sourceHeight <= 0) {
+            return {reason: "zero or invalid source dimensions"};
+        }
+
+        try {
+            sourcePAR = Number(source.pixelAspect);
+        } catch (ignoreSourcePAR) {
+            sourcePAR = 1;
+        }
+        try {
+            compPAR = Number(comp.pixelAspect);
+        } catch (ignoreCompPAR) {
+            compPAR = 1;
+        }
+        if (!isFiniteNumber(sourcePAR) || sourcePAR <= 0) {
+            sourcePAR = 1;
+        }
+        if (!isFiniteNumber(compPAR) || compPAR <= 0) {
+            compPAR = 1;
+        }
+        parX = sourcePAR / compPAR;
+
+        return {
+            item: {
+                id: order,
+                order: order,
+                layer: layer,
+                transformGroup: transformGroup,
+                anchorProperty: anchorProperty,
+                scaleProperty: scaleProperty,
+                positionInfo: positionInfo,
+                sourceWidth: sourceWidth,
+                sourceHeight: sourceHeight,
+                sourcePAR: sourcePAR,
+                parX: parX,
+                displayWidth: sourceWidth * parX,
+                displayHeight: sourceHeight,
+                aspect: (sourceWidth * parX) / sourceHeight,
+                nativeArea: sourceWidth * sourceHeight * parX,
+                tileW: 1,
+                tileH: 1,
+                tileArea: 1
+            }
+        };
+    }
+
+    function tilePixelWidth(span, unit, gap) {
+        return span * unit + (span - 1) * gap;
+    }
+
+    function tileAspect(widthInCells, heightInCells, unit, gap) {
+        return tilePixelWidth(widthInCells, unit, gap) /
+            tilePixelWidth(heightInCells, unit, gap);
+    }
+
+    function aspectCost(sourceAspect, widthInCells, heightInCells, unit, gap) {
+        return Math.abs(Math.log(sourceAspect /
+            tileAspect(widthInCells, heightInCells, unit, gap)));
+    }
+
+    function chooseAspectTile(item, columns, unit, gap) {
+        var candidates = [
+            {w: 1, h: 1}
+        ];
+        var best;
+        var bestCost;
+        var candidate;
+        var cost;
+        var i;
+
+        if (columns >= 2) {
+            candidates.push({w: 2, h: 1});
+        }
+        candidates.push({w: 1, h: 2});
+        if (columns >= 3) {
+            candidates.push({w: 3, h: 1});
+        }
+        candidates.push({w: 1, h: 3});
+
+        best = candidates[0];
+        bestCost = aspectCost(item.aspect, best.w, best.h, unit, gap);
+        for (i = 1; i < candidates.length; i++) {
+            candidate = candidates[i];
+            cost = aspectCost(item.aspect, candidate.w, candidate.h, unit, gap);
+            if (cost < bestCost - EPSILON ||
+                    (Math.abs(cost - bestCost) <= EPSILON &&
+                    candidate.w * candidate.h < best.w * best.h)) {
+                best = candidate;
+                bestCost = cost;
+            }
+        }
+
+        item.tileW = best.w;
+        item.tileH = best.h;
+        item.tileArea = best.w * best.h;
+        item.aspectFitCost = bestCost;
+    }
+
+    function assignBalancedTileSizes(items, columns, unit, gap, randomize, rng,
+            packingStyle) {
+        var squareCandidates = [];
+        var stochastic = randomize || packingStyle !== "Compact";
+        var featureCount;
+        var maxFeatureCount;
+        var item;
+        var squareCost;
+        var i;
+
+        for (i = 0; i < items.length; i++) {
+            item = items[i];
+            chooseAspectTile(item, columns, unit, gap);
+            squareCost = aspectCost(item.aspect, 1, 1, unit, gap);
+            if (item.tileW === 1 && item.tileH === 1 && columns >= 2 &&
+                    items.length >= 4 && squareCost <= Math.log(1.5)) {
+                squareCandidates.push(item);
+            }
+        }
+
+        featureCount = items.length >= 4 ? Math.max(1, Math.floor((items.length + 2) / 6)) : 0;
+        maxFeatureCount = Math.max(1, Math.floor((items.length - 1) / 3));
+        featureCount = Math.min(featureCount, maxFeatureCount, squareCandidates.length);
+
+        for (i = 0; i < squareCandidates.length; i++) {
+            squareCandidates[i]._featureRank = Math.log(Math.max(1, squareCandidates[i].nativeArea));
+            if (stochastic) {
+                squareCandidates[i]._featureRank += (rng.next() - 0.5) * 1.25;
+            }
+        }
+        squareCandidates.sort(function (a, b) {
+            if (Math.abs(b._featureRank - a._featureRank) > EPSILON) {
+                return b._featureRank - a._featureRank;
+            }
+            return a.order - b.order;
+        });
+
+        for (i = 0; i < featureCount; i++) {
+            squareCandidates[i].tileW = 2;
+            squareCandidates[i].tileH = 2;
+            squareCandidates[i].tileArea = 4;
+            squareCandidates[i].aspectFitCost = aspectCost(
+                squareCandidates[i].aspect, 2, 2, unit, gap
+            );
+        }
+    }
+
+    function makeLargeTileCandidates(item, columns, unit, gap, profile, stochastic, rng) {
+        var candidates = [];
+        var widthInCells;
+        var heightInCells;
+        var area;
+        var cost;
+        var score;
+
+        for (heightInCells = 1; heightInCells <= profile.maxSpan; heightInCells++) {
+            for (widthInCells = 1; widthInCells <= profile.maxSpan; widthInCells++) {
+                area = widthInCells * heightInCells;
+                if (widthInCells > columns || area <= item.tileArea) {
+                    continue;
+                }
+                cost = aspectCost(
+                    item.aspect, widthInCells, heightInCells, unit, gap
+                );
+                if (cost > item.aspectFitCost + profile.aspectTolerance + EPSILON) {
+                    continue;
+                }
+                score = cost - profile.areaBias * Math.log(area);
+                if (stochastic) {
+                    score += (rng.next() - 0.5) * profile.shapeJitter;
+                }
+                candidates.push({
+                    w: widthInCells,
+                    h: heightInCells,
+                    area: area,
+                    addedArea: area - item.tileArea,
+                    cost: cost,
+                    score: score
+                });
+            }
+        }
+
+        candidates.sort(function (a, b) {
+            if (Math.abs(a.score - b.score) > EPSILON) {
+                return a.score - b.score;
+            }
+            if (a.area !== b.area) {
+                return b.area - a.area;
+            }
+            if (a.w !== b.w) {
+                return b.w - a.w;
+            }
+            return a.h - b.h;
+        });
+        return candidates;
+    }
+
+    function chooseProportionalTierChoice(item, remainingBudget, profile,
+            packingStyle, rng) {
+        var randomValue;
+        var targetMultiplier;
+        var maximumMultiplier;
+        var choice;
+        var multiplier;
+        var i;
+
+        if (packingStyle === "Compact") {
+            return null;
+        }
+
+        maximumMultiplier = Math.floor(profile.maxSpan /
+            Math.max(item.baseTileW, item.baseTileH));
+        if (maximumMultiplier <= 1) {
+            return null;
+        }
+        randomValue = rng.next();
+        if (maximumMultiplier === 2) {
+            targetMultiplier = 2;
+        } else if (maximumMultiplier === 3) {
+            targetMultiplier = randomValue <
+                (packingStyle === "Loose Mosaic" ? 0.55 : 0.72) ? 2 : 3;
+        } else if (packingStyle === "Loose Mosaic") {
+            targetMultiplier = randomValue < 0.38 ? 2 :
+                (randomValue < 0.70 ? 3 : 4);
+        } else {
+            targetMultiplier = randomValue < 0.55 ? 2 :
+                (randomValue < 0.83 ? 3 : 4);
+        }
+        targetMultiplier = Math.min(targetMultiplier, maximumMultiplier);
+
+        for (multiplier = targetMultiplier; multiplier >= 2; multiplier--) {
+            for (i = 0; i < item._largeTileChoices.length; i++) {
+                choice = item._largeTileChoices[i];
+                if (choice.w === item.baseTileW * multiplier &&
+                        choice.h === item.baseTileH * multiplier &&
+                        choice.addedArea <= remainingBudget) {
+                    return choice;
+                }
+            }
+        }
+        return null;
+    }
+
+    function assignLargeTileSizes(items, columns, unit, gap, randomize, rng,
+            variety, packingStyle) {
+        var stochastic = randomize || packingStyle !== "Compact";
+        var profile = variety === "Wild" ? {
+            maxSpan: 4,
+            aspectTolerance: 0.55,
+            areaBias: 0.08,
+            shapeJitter: 0.60,
+            rankJitter: 1.50,
+            budgetRatio: 1.25,
+            minimumBudget: 15,
+            divisor: 3,
+            countOffset: 2
+        } : {
+            maxSpan: 3,
+            aspectTolerance: 0.32,
+            areaBias: 0.05,
+            shapeJitter: 0.24,
+            rankJitter: 0.80,
+            budgetRatio: 0.75,
+            minimumBudget: 8,
+            divisor: 4,
+            countOffset: 1
+        };
+        var featureCandidates = [];
+        var featureCount;
+        var maxFeatureCount;
+        var baseTotalArea = 0;
+        var addedAreaBudget;
+        var usedAddedArea = 0;
+        var appliedCount = 0;
+        var item;
+        var choices;
+        var choice;
+        var i;
+        var j;
+
+        if (packingStyle === "Loose Mosaic") {
+            profile.shapeJitter *= 1.35;
+            profile.rankJitter *= 1.30;
+            profile.budgetRatio *= 1.20;
+        }
+
+        for (i = 0; i < items.length; i++) {
+            item = items[i];
+            chooseAspectTile(item, columns, unit, gap);
+            item.baseTileW = item.tileW;
+            item.baseTileH = item.tileH;
+            baseTotalArea += item.tileArea;
+            choices = makeLargeTileCandidates(
+                item, columns, unit, gap, profile, stochastic, rng
+            );
+            if (choices.length > 0) {
+                item._largeTileChoices = choices;
+                item._featureRank = Math.log(Math.max(1, item.nativeArea)) -
+                    1.5 * choices[0].cost;
+                if (stochastic) {
+                    item._featureRank += (rng.next() - 0.5) * profile.rankJitter;
+                }
+                featureCandidates.push(item);
+            }
+        }
+
+        featureCount = items.length >= 3 ?
+            Math.max(1, Math.floor((items.length + profile.countOffset) /
+                profile.divisor)) : 0;
+        maxFeatureCount = Math.max(0, items.length - 2);
+        if (packingStyle === "Loose Mosaic" && featureCount > 0) {
+            featureCount = Math.ceil(featureCount * 1.35);
+        }
+        featureCount = Math.min(featureCount, maxFeatureCount, featureCandidates.length);
+        addedAreaBudget = Math.max(
+            profile.minimumBudget,
+            Math.floor(baseTotalArea * profile.budgetRatio)
+        );
+
+        featureCandidates.sort(function (a, b) {
+            if (Math.abs(b._featureRank - a._featureRank) > EPSILON) {
+                return b._featureRank - a._featureRank;
+            }
+            return a.order - b.order;
+        });
+
+        for (i = 0; i < featureCandidates.length && appliedCount < featureCount; i++) {
+            item = featureCandidates[i];
+            choice = chooseProportionalTierChoice(
+                item, addedAreaBudget - usedAddedArea, profile, packingStyle, rng
+            );
+            if (!choice) {
+                for (j = 0; j < item._largeTileChoices.length; j++) {
+                    if (usedAddedArea + item._largeTileChoices[j].addedArea <=
+                            addedAreaBudget) {
+                        choice = item._largeTileChoices[j];
+                        break;
+                    }
+                }
+            }
+            if (!choice) {
+                continue;
+            }
+            item.tileW = choice.w;
+            item.tileH = choice.h;
+            item.tileArea = choice.area;
+            item.aspectFitCost = choice.cost;
+            usedAddedArea += choice.addedArea;
+            appliedCount++;
+        }
+    }
+
+    function mixTileOrientations(items, columns, unit, gap, rng, packingStyle,
+            enabled) {
+        var candidates = [];
+        var swapRatio;
+        var minimumVisible;
+        var swapCount;
+        var visibleFraction;
+        var item;
+        var oldWidth;
+        var i;
+
+        if (!enabled || packingStyle === "Compact") {
+            return 0;
+        }
+
+        swapRatio = packingStyle === "Loose Mosaic" ? 0.26 : 0.14;
+        minimumVisible = packingStyle === "Loose Mosaic" ? 0.16 : 0.23;
+        for (i = 0; i < items.length; i++) {
+            item = items[i];
+            if (item.tileW === item.tileH || item.tileH > columns) {
+                continue;
+            }
+            visibleFraction = Math.exp(-aspectCost(
+                item.aspect, item.tileH, item.tileW, unit, gap
+            ));
+            if (visibleFraction + EPSILON < minimumVisible) {
+                continue;
+            }
+            item._orientationRank = rng.next() +
+                (Math.max(item.tileW, item.tileH) > 2 ? 0.20 : 0);
+            candidates.push(item);
+        }
+
+        candidates.sort(function (a, b) {
+            if (Math.abs(a._orientationRank - b._orientationRank) > EPSILON) {
+                return a._orientationRank - b._orientationRank;
+            }
+            return a.order - b.order;
+        });
+        swapCount = Math.floor(candidates.length * swapRatio);
+        if (swapCount === 0 && candidates.length >= 4) {
+            swapCount = 1;
+        }
+
+        for (i = 0; i < swapCount; i++) {
+            item = candidates[i];
+            oldWidth = item.tileW;
+            item.tileW = item.tileH;
+            item.tileH = oldWidth;
+            item.aspectFitCost = aspectCost(
+                item.aspect, item.tileW, item.tileH, unit, gap
+            );
+            item.orientationMixed = true;
+        }
+        return swapCount;
+    }
+
+    function assignTileSizes(items, columns, unit, gap, randomize, rng, variety,
+            packingStyle, mixOrientations) {
+        if (variety === "Bold" || variety === "Wild") {
+            assignLargeTileSizes(
+                items, columns, unit, gap, randomize, rng, variety, packingStyle
+            );
+        } else {
+            assignBalancedTileSizes(
+                items, columns, unit, gap, randomize, rng, packingStyle
+            );
+        }
+        return mixTileOrientations(
+            items, columns, unit, gap, rng, packingStyle, mixOrientations
+        );
+    }
+
+    function makeGridState(columns) {
+        var heights = [];
+        var counts = [];
+        var i;
+
+        for (i = 0; i < columns; i++) {
+            heights[i] = 0;
+            counts[i] = 0;
+        }
+        return {
+            columns: columns,
+            grid: [],
+            colHeights: heights,
+            colCounts: counts,
+            usedRows: 0,
+            usedCells: 0,
+            buried: 0,
+            roughness: 0,
+            placements: []
+        };
+    }
+
+    function isOccupied(state, x, y) {
+        return state.grid[y] && state.grid[y][x] === true;
+    }
+
+    function canPlace(state, tile, x, y) {
+        var xx;
+        var yy;
+
+        if (x < 0 || y < 0 || x + tile.tileW > state.columns) {
+            return false;
+        }
+        for (yy = y; yy < y + tile.tileH; yy++) {
+            for (xx = x; xx < x + tile.tileW; xx++) {
+                if (isOccupied(state, xx, yy)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function countPlacementContact(state, tile, x, y) {
+        var contact = 0;
+        var xx;
+        var yy;
+
+        for (xx = x; xx < x + tile.tileW; xx++) {
+            if (y === 0 || isOccupied(state, xx, y - 1)) {
+                contact++;
+            }
+            if (isOccupied(state, xx, y + tile.tileH)) {
+                contact++;
+            }
+        }
+        for (yy = y; yy < y + tile.tileH; yy++) {
+            if (x === 0 || isOccupied(state, x - 1, yy)) {
+                contact++;
+            }
+            if (x + tile.tileW === state.columns ||
+                    isOccupied(state, x + tile.tileW, yy)) {
+                contact++;
+            }
+        }
+        return contact;
+    }
+
+    function candidateMetrics(state, tile, x, y, randomize, rng, packingStyle) {
+        var rows = state.usedRows;
+        var buried = state.buried;
+        var roughness = state.roughness;
+        var end = x + tile.tileW - 1;
+        var newTop = y + tile.tileH;
+        var oldHeight;
+        var newHeight;
+        var oldLeft;
+        var oldRight;
+        var newLeft;
+        var newRight;
+        var firstBoundary;
+        var lastBoundary;
+        var i;
+
+        for (i = x; i <= end; i++) {
+            oldHeight = state.colHeights[i];
+            newHeight = Math.max(oldHeight, newTop);
+            buried += (newHeight - (state.colCounts[i] + tile.tileH)) -
+                (oldHeight - state.colCounts[i]);
+            rows = Math.max(rows, newHeight);
+        }
+
+        firstBoundary = Math.max(0, x - 1);
+        lastBoundary = Math.min(state.columns - 2, end);
+        for (i = firstBoundary; i <= lastBoundary; i++) {
+            oldLeft = state.colHeights[i];
+            oldRight = state.colHeights[i + 1];
+            newLeft = i >= x && i <= end ? Math.max(oldLeft, newTop) : oldLeft;
+            newRight = i + 1 >= x && i + 1 <= end ?
+                Math.max(oldRight, newTop) : oldRight;
+            roughness += Math.abs(newLeft - newRight) - Math.abs(oldLeft - oldRight);
+        }
+
+        return {
+            x: x,
+            y: y,
+            rows: rows,
+            buried: buried,
+            roughness: roughness,
+            contact: countPlacementContact(state, tile, x, y),
+            randomTie: randomize || packingStyle !== "Compact" ? rng.next() : 0
+        };
+    }
+
+    function candidateIsBetter(candidate, best, randomize, packingStyle) {
+        var candidateScore;
+        var bestScore;
+
+        if (!best) {
+            return true;
+        }
+        if (packingStyle === "Loose Mosaic") {
+            candidateScore = candidate.rows * 1.6 + candidate.buried * 4 +
+                candidate.roughness * 0.02 - candidate.contact * 0.05 +
+                candidate.randomTie * 2.2;
+            bestScore = best.rows * 1.6 + best.buried * 4 +
+                best.roughness * 0.02 - best.contact * 0.05 +
+                best.randomTie * 2.2;
+            if (Math.abs(candidateScore - bestScore) > EPSILON) {
+                return candidateScore < bestScore;
+            }
+            if (candidate.rows !== best.rows) {
+                return candidate.rows < best.rows;
+            }
+            if (candidate.buried !== best.buried) {
+                return candidate.buried < best.buried;
+            }
+            if (candidate.y !== best.y) {
+                return candidate.y < best.y;
+            }
+            return candidate.x < best.x;
+        }
+        if (candidate.rows !== best.rows) {
+            return candidate.rows < best.rows;
+        }
+        if (candidate.buried !== best.buried) {
+            return candidate.buried < best.buried;
+        }
+        if (packingStyle === "Interlocking" &&
+                Math.abs(candidate.randomTie - best.randomTie) > EPSILON) {
+            return candidate.randomTie < best.randomTie;
+        }
+        if (candidate.roughness !== best.roughness) {
+            return candidate.roughness < best.roughness;
+        }
+        if (candidate.contact !== best.contact) {
+            return candidate.contact > best.contact;
+        }
+        if (randomize && Math.abs(candidate.randomTie - best.randomTie) > EPSILON) {
+            return candidate.randomTie < best.randomTie;
+        }
+        if (candidate.y !== best.y) {
+            return candidate.y < best.y;
+        }
+        return candidate.x < best.x;
+    }
+
+    function findBestPlacement(state, tile, randomize, rng, packingStyle) {
+        var best = null;
+        var candidate;
+        var x;
+        var y;
+
+        for (y = 0; y <= state.usedRows; y++) {
+            for (x = 0; x <= state.columns - tile.tileW; x++) {
+                if (canPlace(state, tile, x, y)) {
+                    candidate = candidateMetrics(
+                        state, tile, x, y, randomize, rng, packingStyle
+                    );
+                    if (candidateIsBetter(
+                            candidate, best, randomize, packingStyle)) {
+                        best = candidate;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    function occupy(state, tile, x, y, metrics) {
+        var xx;
+        var yy;
+
+        for (yy = y; yy < y + tile.tileH; yy++) {
+            if (!state.grid[yy]) {
+                state.grid[yy] = [];
+            }
+            for (xx = x; xx < x + tile.tileW; xx++) {
+                state.grid[yy][xx] = true;
+            }
+        }
+        for (xx = x; xx < x + tile.tileW; xx++) {
+            state.colHeights[xx] = Math.max(state.colHeights[xx], y + tile.tileH);
+            state.colCounts[xx] += tile.tileH;
+        }
+        state.usedRows = Math.max(state.usedRows, y + tile.tileH);
+        state.usedCells += tile.tileArea;
+        if (metrics) {
+            state.buried = metrics.buried;
+            state.roughness = metrics.roughness;
+        }
+        state.placements.push({item: tile, x: x, y: y});
+    }
+
+    function spreadShuffledBuckets(buckets, rng) {
+        var combined = [];
+        var bucket;
+        var item;
+        var b;
+        var i;
+
+        for (b = 0; b < buckets.length; b++) {
+            bucket = shuffledCopy(buckets[b], rng);
+            for (i = 0; i < bucket.length; i++) {
+                item = bucket[i];
+                item._bucketSpread = (i + rng.next() * 0.75) /
+                    Math.max(1, bucket.length);
+                item._bucketTie = rng.next();
+                combined.push(item);
+            }
+        }
+        combined.sort(function (a, b) {
+            if (Math.abs(a._bucketSpread - b._bucketSpread) > EPSILON) {
+                return a._bucketSpread - b._bucketSpread;
+            }
+            if (Math.abs(a._bucketTie - b._bucketTie) > EPSILON) {
+                return a._bucketTie - b._bucketTie;
+            }
+            return a.order - b.order;
+        });
+        return combined;
+    }
+
+    function makeAttemptOrder(items, attempt, randomize, rng, packingStyle) {
+        var ordered = items.slice(0);
+        var buckets;
+        var randomValue;
+        var i;
+
+        for (i = 0; i < ordered.length; i++) {
+            ordered[i]._packRandom = rng.next();
+        }
+
+        if (packingStyle !== "Compact") {
+            if (attempt === 1 || attempt === 5) {
+                return shuffledCopy(ordered, rng);
+            }
+            if (attempt === 2) {
+                buckets = [[], [], []];
+                for (i = 0; i < ordered.length; i++) {
+                    if (ordered[i].tileW > ordered[i].tileH) {
+                        buckets[0].push(ordered[i]);
+                    } else if (ordered[i].tileW < ordered[i].tileH) {
+                        buckets[1].push(ordered[i]);
+                    } else {
+                        buckets[2].push(ordered[i]);
+                    }
+                }
+                return spreadShuffledBuckets(buckets, rng);
+            }
+            if (attempt === 3 ||
+                    (packingStyle === "Loose Mosaic" && attempt === 6)) {
+                buckets = [[], [], []];
+                for (i = 0; i < ordered.length; i++) {
+                    if (ordered[i].tileArea <= 2) {
+                        buckets[0].push(ordered[i]);
+                    } else if (ordered[i].tileArea <= 6) {
+                        buckets[1].push(ordered[i]);
+                    } else {
+                        buckets[2].push(ordered[i]);
+                    }
+                }
+                return spreadShuffledBuckets(buckets, rng);
+            }
+            if (attempt >= 4) {
+                for (i = 0; i < ordered.length; i++) {
+                    randomValue = clamp(rng.next(), 0.000001, 0.999999);
+                    ordered[i]._organicPriority =
+                        (packingStyle === "Loose Mosaic" ? 0.12 : 0.55) *
+                        Math.log(Math.max(1, ordered[i].tileArea)) -
+                        Math.log(-Math.log(randomValue));
+                }
+                ordered.sort(function (a, b) {
+                    if (Math.abs(b._organicPriority - a._organicPriority) > EPSILON) {
+                        return b._organicPriority - a._organicPriority;
+                    }
+                    return a.order - b.order;
+                });
+                return ordered;
+            }
+        }
+
+        if (attempt % 7 === 6) {
+            return shuffledCopy(ordered, rng);
+        }
+
+        ordered.sort(function (a, b) {
+            var difference;
+
+            if (attempt % 5 === 1) {
+                difference = b.tileArea - a.tileArea;
+                if (difference !== 0) {
+                    return difference;
+                }
+                difference = b.tileW - a.tileW;
+                if (difference !== 0) {
+                    return difference;
+                }
+                difference = b.tileH - a.tileH;
+                if (difference !== 0) {
+                    return difference;
+                }
+            } else if (attempt % 5 === 2) {
+                difference = b.tileH - a.tileH;
+                if (difference !== 0) {
+                    return difference;
+                }
+                difference = b.tileArea - a.tileArea;
+                if (difference !== 0) {
+                    return difference;
+                }
+            } else if (attempt % 5 === 3) {
+                difference = b.tileW - a.tileW;
+                if (difference !== 0) {
+                    return difference;
+                }
+                difference = b.tileArea - a.tileArea;
+                if (difference !== 0) {
+                    return difference;
+                }
+            } else {
+                difference = b.tileArea - a.tileArea;
+                if (difference !== 0) {
+                    return difference;
+                }
+                difference = b.tileH - a.tileH;
+                if (difference !== 0) {
+                    return difference;
+                }
+                difference = b.tileW - a.tileW;
+                if (difference !== 0) {
+                    return difference;
+                }
+            }
+
+            if ((randomize || attempt >= 5) &&
+                    Math.abs(a._packRandom - b._packRandom) > EPSILON) {
+                return a._packRandom - b._packRandom;
+            }
+            return a.order - b.order;
+        });
+        return ordered;
+    }
+
+    function calculateLayoutPatternMetrics(state) {
+        var owners = [];
+        var minimumColumn = state.columns;
+        var maximumColumn = 0;
+        var horizontalBand = 0;
+        var verticalBand = 0;
+        var longestHorizontal = 0;
+        var longestVertical = 0;
+        var sizeSum = 0;
+        var verticalSum = 0;
+        var sizeMean;
+        var verticalMean;
+        var sizeVariance = 0;
+        var verticalVariance = 0;
+        var sizeVerticalCovariance = 0;
+        var sizeVerticalGradient = 0;
+        var featureWeight = 0;
+        var featureVerticalSum = 0;
+        var featureCenterBias = 0;
+        var sizeValue;
+        var verticalValue;
+        var weight;
+        var usedWidth;
+        var edgeCount;
+        var longestRun;
+        var run;
+        var placement;
+        var upper;
+        var lower;
+        var left;
+        var right;
+        var x;
+        var y;
+        var i;
+
+        for (i = 0; i < state.placements.length; i++) {
+            placement = state.placements[i];
+            minimumColumn = Math.min(minimumColumn, placement.x);
+            maximumColumn = Math.max(
+                maximumColumn, placement.x + placement.item.tileW
+            );
+        }
+        usedWidth = Math.max(1, maximumColumn - minimumColumn);
+        for (y = 0; y < state.usedRows; y++) {
+            owners[y] = [];
+        }
+        for (i = 0; i < state.placements.length; i++) {
+            placement = state.placements[i];
+            sizeValue = Math.log(Math.max(1, placement.item.tileArea));
+            verticalValue = (placement.y + placement.item.tileH / 2) /
+                Math.max(1, state.usedRows);
+            sizeSum += sizeValue;
+            verticalSum += verticalValue;
+            weight = Math.max(0, placement.item.tileArea - 1);
+            featureWeight += weight;
+            featureVerticalSum += verticalValue * weight;
+            for (y = placement.y; y < placement.y + placement.item.tileH; y++) {
+                for (x = placement.x;
+                        x < placement.x + placement.item.tileW; x++) {
+                    owners[y][x - minimumColumn] = placement.item.id + 1;
+                }
+            }
+        }
+
+        if (state.placements.length > 1) {
+            sizeMean = sizeSum / state.placements.length;
+            verticalMean = verticalSum / state.placements.length;
+            for (i = 0; i < state.placements.length; i++) {
+                placement = state.placements[i];
+                sizeValue = Math.log(Math.max(1, placement.item.tileArea));
+                verticalValue = (placement.y + placement.item.tileH / 2) /
+                    Math.max(1, state.usedRows);
+                sizeVariance += (sizeValue - sizeMean) *
+                    (sizeValue - sizeMean);
+                verticalVariance += (verticalValue - verticalMean) *
+                    (verticalValue - verticalMean);
+                sizeVerticalCovariance += (sizeValue - sizeMean) *
+                    (verticalValue - verticalMean);
+            }
+            if (sizeVariance > EPSILON && verticalVariance > EPSILON) {
+                sizeVerticalGradient = Math.abs(sizeVerticalCovariance /
+                    Math.sqrt(sizeVariance * verticalVariance));
+            }
+        }
+        if (featureWeight > EPSILON) {
+            featureCenterBias = Math.abs(featureVerticalSum / featureWeight - 0.5);
+        }
+
+        for (y = 1; y < state.usedRows; y++) {
+            edgeCount = 0;
+            longestRun = 0;
+            run = 0;
+            for (x = 0; x < usedWidth; x++) {
+                upper = owners[y - 1][x];
+                lower = owners[y][x];
+                if (upper !== undefined && lower !== undefined && upper !== lower) {
+                    edgeCount++;
+                    run++;
+                    longestRun = Math.max(longestRun, run);
+                } else {
+                    run = 0;
+                }
+            }
+            horizontalBand += edgeCount * edgeCount +
+                2 * longestRun * longestRun;
+            longestHorizontal = Math.max(longestHorizontal, longestRun);
+        }
+
+        for (x = 1; x < usedWidth; x++) {
+            edgeCount = 0;
+            longestRun = 0;
+            run = 0;
+            for (y = 0; y < state.usedRows; y++) {
+                left = owners[y][x - 1];
+                right = owners[y][x];
+                if (left !== undefined && right !== undefined && left !== right) {
+                    edgeCount++;
+                    run++;
+                    longestRun = Math.max(longestRun, run);
+                } else {
+                    run = 0;
+                }
+            }
+            verticalBand += edgeCount * edgeCount +
+                2 * longestRun * longestRun;
+            longestVertical = Math.max(longestVertical, longestRun);
+        }
+
+        return {
+            usedWidth: usedWidth,
+            fill: state.usedRows > 0 ?
+                state.usedCells / (state.usedRows * usedWidth) : 1,
+            horizontalBand: horizontalBand,
+            verticalBand: verticalBand,
+            longestHorizontal: longestHorizontal,
+            longestVertical: longestVertical,
+            sizeVerticalGradient: sizeVerticalGradient,
+            featureCenterBias: featureCenterBias
+        };
+    }
+
+    function summarizeState(state) {
+        var pattern = calculateLayoutPatternMetrics(state);
+
+        return {
+            rows: state.usedRows,
+            buried: state.buried,
+            roughness: state.roughness,
+            usedCells: state.usedCells,
+            usedWidth: pattern.usedWidth,
+            fill: pattern.fill,
+            horizontalBand: pattern.horizontalBand,
+            verticalBand: pattern.verticalBand,
+            longestHorizontal: pattern.longestHorizontal,
+            longestVertical: pattern.longestVertical,
+            sizeVerticalGradient: pattern.sizeVerticalGradient,
+            featureCenterBias: pattern.featureCenterBias
+        };
+    }
+
+    function placementSignature(placements) {
+        var sorted = placements.slice(0);
+        var parts = [];
+        var i;
+
+        sorted.sort(function (a, b) {
+            return a.item.id - b.item.id;
+        });
+        for (i = 0; i < sorted.length; i++) {
+            parts.push(sorted[i].item.id + ":" + sorted[i].x + "," +
+                sorted[i].y + "," + sorted[i].item.tileW + "x" + sorted[i].item.tileH);
+        }
+        return parts.join("|");
+    }
+
+    function layoutIsBetter(candidate, best, randomize) {
+        if (!best) {
+            return true;
+        }
+        if (candidate.metrics.rows !== best.metrics.rows) {
+            return candidate.metrics.rows < best.metrics.rows;
+        }
+        if (candidate.metrics.buried !== best.metrics.buried) {
+            return candidate.metrics.buried < best.metrics.buried;
+        }
+        if (candidate.metrics.roughness !== best.metrics.roughness) {
+            return candidate.metrics.roughness < best.metrics.roughness;
+        }
+        if (randomize && Math.abs(candidate.randomTie - best.randomTie) > EPSILON) {
+            return candidate.randomTie < best.randomTie;
+        }
+        return candidate.signature < best.signature;
+    }
+
+    function organicLayoutScore(candidate, baseline, packingStyle) {
+        var metrics = candidate.metrics;
+        var usedCells = Math.max(1, metrics.usedCells);
+        var rowOver = Math.max(0, metrics.rows - baseline.metrics.rows);
+        var buriedOver = Math.max(0, metrics.buried - baseline.metrics.buried);
+        var horizontalWeight = packingStyle === "Loose Mosaic" ? 3.0 : 4.0;
+        var verticalWeight = packingStyle === "Loose Mosaic" ? 0.5 : 0.8;
+        var fillWeight = packingStyle === "Loose Mosaic" ? 30 : 60;
+        var rowWeight = packingStyle === "Loose Mosaic" ? 1.5 : 3.0;
+        var randomWeight = packingStyle === "Loose Mosaic" ? 1.0 : 0.35;
+        var sizeGradientWeight = packingStyle === "Loose Mosaic" ? 42 : 20;
+        var featureCenterWeight = packingStyle === "Loose Mosaic" ? 28 : 12;
+
+        return horizontalWeight * metrics.horizontalBand / usedCells +
+            verticalWeight * metrics.verticalBand / usedCells +
+            (1 - metrics.fill) * fillWeight + rowOver * rowWeight +
+            buriedOver * 0.5 +
+            metrics.sizeVerticalGradient * sizeGradientWeight +
+            metrics.featureCenterBias * featureCenterWeight +
+            candidate.randomTie * randomWeight;
+    }
+
+    function selectPackedLayout(candidates, packingStyle, randomize,
+            compactBaseline) {
+        var baseline = compactBaseline || null;
+        var best = null;
+        var bestScore = Number.MAX_VALUE;
+        var score;
+        var rowSlack;
+        var buriedSlack;
+        var minimumFill;
+        var candidate;
+        var i;
+
+        if (packingStyle === "Compact") {
+            for (i = 0; i < candidates.length; i++) {
+                if (layoutIsBetter(candidates[i], baseline, randomize)) {
+                    baseline = candidates[i];
+                }
+            }
+            return baseline;
+        }
+
+        if (!baseline) {
+            for (i = 0; i < candidates.length; i++) {
+                if (layoutIsBetter(candidates[i], baseline, false)) {
+                    baseline = candidates[i];
+                }
+            }
+        }
+        if (!baseline) {
+            return baseline;
+        }
+
+        rowSlack = packingStyle === "Loose Mosaic" ?
+            Math.max(2, Math.ceil(baseline.metrics.rows * 0.08)) :
+            Math.max(1, Math.ceil(baseline.metrics.rows * 0.04));
+        buriedSlack = Math.ceil(baseline.metrics.usedCells *
+            (packingStyle === "Loose Mosaic" ? 0.05 : 0.02));
+        minimumFill = Math.min(
+            packingStyle === "Loose Mosaic" ? 0.78 : 0.86,
+            baseline.metrics.fill
+        );
+
+        for (i = 0; i < candidates.length; i++) {
+            candidate = candidates[i];
+            if (candidate.metrics.rows > baseline.metrics.rows + rowSlack ||
+                    candidate.metrics.buried > baseline.metrics.buried + buriedSlack ||
+                    candidate.metrics.fill + EPSILON < minimumFill) {
+                continue;
+            }
+            score = organicLayoutScore(candidate, baseline, packingStyle);
+            if (!best || score < bestScore - EPSILON ||
+                    (Math.abs(score - bestScore) <= EPSILON &&
+                    candidate.signature < best.signature)) {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+        return best || baseline;
+    }
+
+    function cloneGridState(state) {
+        var grid = [];
+        var i;
+
+        for (i = 0; i < state.grid.length; i++) {
+            grid[i] = state.grid[i] ? state.grid[i].slice(0) : [];
+        }
+        return {
+            columns: state.columns,
+            grid: grid,
+            colHeights: state.colHeights.slice(0),
+            colCounts: state.colCounts.slice(0),
+            usedRows: state.usedRows,
+            usedCells: state.usedCells,
+            buried: state.buried,
+            roughness: state.roughness,
+            placements: state.placements.slice(0)
+        };
+    }
+
+    function placementComparison(a, b, randomize, packingStyle) {
+        if (candidateIsBetter(a, b, randomize, packingStyle)) {
+            return -1;
+        }
+        if (candidateIsBetter(b, a, randomize, packingStyle)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    function findPlacementChoices(state, tile, limit, randomize, rng, packingStyle) {
+        var choices = [];
+        var candidate;
+        var insertAt;
+        var x;
+        var y;
+
+        for (y = 0; y <= state.usedRows; y++) {
+            for (x = 0; x <= state.columns - tile.tileW; x++) {
+                if (!canPlace(state, tile, x, y)) {
+                    continue;
+                }
+                candidate = candidateMetrics(
+                    state, tile, x, y, randomize, rng, packingStyle
+                );
+                insertAt = choices.length;
+                while (insertAt > 0 &&
+                        placementComparison(
+                            candidate, choices[insertAt - 1], randomize,
+                            packingStyle
+                        ) < 0) {
+                    insertAt--;
+                }
+                choices.splice(insertAt, 0, candidate);
+                if (choices.length > limit) {
+                    choices.pop();
+                }
+            }
+        }
+        return choices;
+    }
+
+    function removeArrayItem(values, index) {
+        var result = [];
+        var i;
+
+        for (i = 0; i < values.length; i++) {
+            if (i !== index) {
+                result.push(values[i]);
+            }
+        }
+        return result;
+    }
+
+    function remainingShapeSignature(remaining) {
+        var counts = {};
+        var keys = [];
+        var parts = [];
+        var key;
+        var i;
+
+        for (i = 0; i < remaining.length; i++) {
+            key = remaining[i].tileW + "x" + remaining[i].tileH;
+            if (counts[key] === undefined) {
+                counts[key] = 1;
+                keys.push(key);
+            } else {
+                counts[key]++;
+            }
+        }
+        keys.sort();
+        for (i = 0; i < keys.length; i++) {
+            parts.push(keys[i] + ":" + counts[keys[i]]);
+        }
+        return parts.join("|");
+    }
+
+    function comparePartialNodes(a, b, totalTileArea, columns, randomize) {
+        var lowerBound = Math.ceil(totalTileArea / columns);
+        var projectedA = Math.max(lowerBound, a.state.usedRows);
+        var projectedB = Math.max(lowerBound, b.state.usedRows);
+        var emptyA;
+        var emptyB;
+
+        if (projectedA !== projectedB) {
+            return projectedA - projectedB;
+        }
+        if (a.state.buried !== b.state.buried) {
+            return a.state.buried - b.state.buried;
+        }
+        if (a.state.roughness !== b.state.roughness) {
+            return a.state.roughness - b.state.roughness;
+        }
+        emptyA = a.state.usedRows * columns - a.state.usedCells;
+        emptyB = b.state.usedRows * columns - b.state.usedCells;
+        if (emptyA !== emptyB) {
+            return emptyA - emptyB;
+        }
+        if (randomize && Math.abs(a.randomTie - b.randomTie) > EPSILON) {
+            return a.randomTie < b.randomTie ? -1 : 1;
+        }
+        return a.sequence - b.sequence;
+    }
+
+    function selectBeamNodes(candidates, beamWidth, totalTileArea, columns, randomize) {
+        var reservedByShape = {};
+        var reserved = [];
+        var selected = [];
+        var signature;
+        var node;
+        var key;
+        var i;
+
+        candidates.sort(function (a, b) {
+            return comparePartialNodes(a, b, totalTileArea, columns, randomize);
+        });
+
+        for (i = 0; i < candidates.length; i++) {
+            node = candidates[i];
+            signature = remainingShapeSignature(node.remaining);
+            if (reservedByShape[signature] === undefined) {
+                reservedByShape[signature] = node;
+            }
+        }
+        for (key in reservedByShape) {
+            if (reservedByShape.hasOwnProperty(key)) {
+                reserved.push(reservedByShape[key]);
+            }
+        }
+        reserved.sort(function (a, b) {
+            return comparePartialNodes(a, b, totalTileArea, columns, randomize);
+        });
+
+        for (i = 0; i < reserved.length && selected.length < beamWidth; i++) {
+            reserved[i]._beamSelected = true;
+            selected.push(reserved[i]);
+        }
+        for (i = 0; i < candidates.length && selected.length < beamWidth; i++) {
+            if (!candidates[i]._beamSelected) {
+                candidates[i]._beamSelected = true;
+                selected.push(candidates[i]);
+            }
+        }
+        for (i = 0; i < selected.length; i++) {
+            selected[i]._beamSelected = false;
+        }
+        return selected;
+    }
+
+    function beamPackTiles(items, columns, seed, randomize, packingStyle) {
+        var beamWidth = items.length <= 10 ? 72 : (items.length <= 18 ? 40 : 24);
+        var placementLimit = items.length <= 12 ? 5 : 3;
+        var rng = new RNG((seed + 15485863) % 2147483647);
+        var startingItems = randomize ? shuffledCopy(items, rng) : items.slice(0);
+        var totalTileArea = 0;
+        var beam = [];
+        var expanded;
+        var seenShapes;
+        var shapeKey;
+        var choices;
+        var nextState;
+        var nextRemaining;
+        var sequence = 0;
+        var node;
+        var tile;
+        var finalState;
+        var best = null;
+        var candidate;
+        var depth;
+        var n;
+        var r;
+        var p;
+        var i;
+
+        for (i = 0; i < items.length; i++) {
+            totalTileArea += items[i].tileArea;
+        }
+        if (!randomize) {
+            startingItems.sort(function (a, b) {
+                return a.order - b.order;
+            });
+        }
+        beam.push({
+            state: makeGridState(columns),
+            remaining: startingItems,
+            randomTie: rng.next(),
+            sequence: sequence++
+        });
+
+        for (depth = 0; depth < items.length; depth++) {
+            expanded = [];
+            for (n = 0; n < beam.length; n++) {
+                node = beam[n];
+                seenShapes = {};
+                for (r = 0; r < node.remaining.length; r++) {
+                    tile = node.remaining[r];
+                    shapeKey = tile.tileW + "x" + tile.tileH;
+                    if (seenShapes[shapeKey]) {
+                        continue;
+                    }
+                    seenShapes[shapeKey] = true;
+                    choices = findPlacementChoices(
+                        node.state, tile, placementLimit, randomize, rng,
+                        packingStyle
+                    );
+                    for (p = 0; p < choices.length; p++) {
+                        nextState = cloneGridState(node.state);
+                        occupy(nextState, tile, choices[p].x, choices[p].y, choices[p]);
+                        nextRemaining = removeArrayItem(node.remaining, r);
+                        expanded.push({
+                            state: nextState,
+                            remaining: nextRemaining,
+                            randomTie: rng.next(),
+                            sequence: sequence++
+                        });
+                    }
+                }
+            }
+            if (expanded.length === 0) {
+                return null;
+            }
+            beam = selectBeamNodes(
+                expanded, beamWidth, totalTileArea, columns, randomize
+            );
+        }
+
+        for (i = 0; i < beam.length; i++) {
+            finalState = beam[i].state;
+            candidate = {
+                placements: finalState.placements,
+                usedRows: finalState.usedRows,
+                usedCells: finalState.usedCells,
+                metrics: summarizeState(finalState),
+                signature: placementSignature(finalState.placements),
+                randomTie: beam[i].randomTie
+            };
+            if (layoutIsBetter(candidate, best, randomize)) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    function makeGreedyPackCandidate(items, columns, seed, randomize, attempt,
+            orderStyle, placementStyle) {
+        var attemptSeed = (seed + (attempt + 1) * 104729) % 2147483647;
+        var rng = new RNG(attemptSeed);
+        var ordered = makeAttemptOrder(
+            items, attempt, randomize, rng, orderStyle
+        );
+        var state = makeGridState(columns);
+        var placement;
+        var i;
+
+        for (i = 0; i < ordered.length; i++) {
+            placement = findBestPlacement(
+                state, ordered[i], randomize, rng, placementStyle
+            );
+            if (!placement) {
+                throw new Error("The grid packer could not place a tile.");
+            }
+            occupy(state, ordered[i], placement.x, placement.y, placement);
+        }
+        return {
+            placements: state.placements,
+            usedRows: state.usedRows,
+            usedCells: state.usedCells,
+            metrics: summarizeState(state),
+            signature: placementSignature(state.placements),
+            randomTie: rng.next()
+        };
+    }
+
+    function packTiles(items, columns, seed, randomize, packingStyle) {
+        var compactAttemptCount = items.length <= 80 ? (randomize ? 18 : 14) :
+            (items.length <= 200 ? 8 : 5);
+        var organicAttemptCount;
+        var candidates = [];
+        var compactCandidates = [];
+        var compactBest;
+        var compactBeam;
+        var organicSeed;
+        var dispersionSeed;
+        var attempt;
+        var beamCandidate;
+
+        for (attempt = 0; attempt < compactAttemptCount; attempt++) {
+            compactCandidates.push(makeGreedyPackCandidate(
+                items, columns, seed, randomize, attempt, "Compact", "Compact"
+            ));
+        }
+        if (items.length <= 28 && columns <= 60) {
+            compactBeam = beamPackTiles(
+                items, columns, seed, randomize, "Compact"
+            );
+            if (compactBeam) {
+                compactCandidates.push(compactBeam);
+            }
+        }
+        compactBest = selectPackedLayout(
+            compactCandidates, "Compact", randomize, null
+        );
+        if (packingStyle === "Compact") {
+            return compactBest;
+        }
+
+        if (items.length <= 80) {
+            organicAttemptCount = randomize ? 18 : 14;
+        } else if (items.length <= 200) {
+            organicAttemptCount = 9;
+        } else if (items.length <= 600) {
+            organicAttemptCount = 7;
+        } else {
+            organicAttemptCount = 5;
+        }
+        organicSeed = (seed + 32452843) % 2147483647;
+        candidates.push(compactBest);
+        for (attempt = 0; attempt < organicAttemptCount; attempt++) {
+            candidates.push(makeGreedyPackCandidate(
+                items, columns, organicSeed, randomize, attempt,
+                packingStyle, packingStyle
+            ));
+        }
+        if (packingStyle === "Loose Mosaic") {
+            dispersionSeed = (organicSeed + 49979687) % 2147483647;
+            candidates.push(makeGreedyPackCandidate(
+                items, columns, dispersionSeed, randomize, 3,
+                "Loose Mosaic", "Compact"
+            ));
+            candidates.push(makeGreedyPackCandidate(
+                items, columns, dispersionSeed, randomize, 6,
+                "Loose Mosaic", "Compact"
+            ));
+        }
+
+        if (items.length <= 28 && columns <= 60) {
+            beamCandidate = beamPackTiles(
+                items, columns, organicSeed, randomize, packingStyle
+            );
+            if (beamCandidate) {
+                candidates.push(beamCandidate);
+            }
+        }
+        return selectPackedLayout(
+            candidates, packingStyle, randomize, compactBest
+        );
+    }
+
+    function makeBaseSeed(items, settings, columns) {
+        var seed = 13579;
+        var varietySalt = settings.tileVariety === "Wild" ? 37 :
+            (settings.tileVariety === "Bold" ? 23 : 11);
+        var styleSalt = settings.packingStyle === "Loose Mosaic" ? 71 :
+            (settings.packingStyle === "Interlocking" ? 53 : 0);
+        var item;
+        var i;
+
+        seed = (seed * 48271 + Math.round(settings.unit * 10)) % 2147483647;
+        seed = (seed * 48271 + Math.round(settings.gap * 10)) % 2147483647;
+        seed = (seed * 48271 + columns * 97) % 2147483647;
+        seed = (seed * 48271 + varietySalt) % 2147483647;
+        if (styleSalt !== 0) {
+            seed = (seed * 48271 + styleSalt +
+                (settings.mixOrientations ? 101 : 0)) % 2147483647;
+        }
+        for (i = 0; i < items.length; i++) {
+            item = items[i];
+            seed = (seed * 48271 + item.layer.index * 7919 +
+                Math.round(item.sourceWidth) * 31 + Math.round(item.sourceHeight) * 17) % 2147483647;
+        }
+        return Math.max(1, Math.floor(seed));
+    }
+
+    function findBentoMasks(maskParade) {
+        var matches = [];
+        var mask;
+        var i;
+
+        for (i = 1; i <= maskParade.numProperties; i++) {
+            mask = maskParade.property(i);
+            if (mask && mask.name === CROP_MASK_NAME) {
+                matches.push(mask);
+            }
+        }
+        return matches;
+    }
+
+    function copyValue(value) {
+        if (value && value.constructor === Array) {
+            return value.slice(0);
+        }
+        return value;
+    }
+
+    function requireStaticMaskProperty(mask, matchName, displayName) {
+        var property = mask.property(matchName);
+
+        if (!property || !propertyIsStatic(property)) {
+            throw new Error("The Bento crop " + displayName +
+                " is missing, animated, or expression-driven.");
+        }
+        return property;
+    }
+
+    function preflightBentoMask(layer, needsCrop) {
+        var maskParade = layer.property("ADBE Mask Parade");
+        var matches;
+        var mask;
+        var pathProperty;
+        var featherProperty;
+        var offsetProperty;
+        var opacityProperty;
+        var canAdd = false;
+        var maskLocked = false;
+        var info;
+
+        if (!maskParade) {
+            if (needsCrop) {
+                throw new Error("Masks are unavailable on this layer.");
+            }
+            return null;
+        }
+
+        matches = findBentoMasks(maskParade);
+        if (matches.length > 1) {
+            throw new Error("Multiple masks use the reserved Bento crop name.");
+        }
+        if (matches.length === 0) {
+            if (needsCrop) {
+                try {
+                    canAdd = maskParade.canAddProperty("ADBE Mask Atom");
+                } catch (ignoreCanAdd) {
+                    canAdd = false;
+                }
+                if (!canAdd) {
+                    throw new Error("A crop mask cannot be added to this layer.");
+                }
+            }
+            return {
+                maskParade: maskParade,
+                mask: null,
+                existed: false,
+                created: false,
+                original: null
+            };
+        }
+
+        mask = matches[0];
+        try {
+            maskLocked = mask.locked === true;
+        } catch (ignoreMaskLocked) {
+            maskLocked = false;
+        }
+        if (maskLocked) {
+            throw new Error("The Bento crop mask is locked.");
+        }
+
+        info = {
+            maskParade: maskParade,
+            mask: mask,
+            existed: true,
+            created: false,
+            original: {
+                index: mask.propertyIndex,
+                maskMode: mask.maskMode,
+                inverted: mask.inverted,
+                rotoBezier: mask.rotoBezier
+            }
+        };
+
+        if (needsCrop) {
+            pathProperty = requireStaticMaskProperty(mask, "ADBE Mask Shape", "path");
+            featherProperty = requireStaticMaskProperty(mask, "ADBE Mask Feather", "feather");
+            offsetProperty = requireStaticMaskProperty(mask, "ADBE Mask Offset", "expansion");
+            opacityProperty = requireStaticMaskProperty(mask, "ADBE Mask Opacity", "opacity");
+            info.original.pathValue = copyValue(pathProperty.value);
+            info.original.featherValue = copyValue(featherProperty.value);
+            info.original.offsetValue = copyValue(offsetProperty.value);
+            info.original.opacityValue = copyValue(opacityProperty.value);
+        }
+        return info;
+    }
+
+    function restoreBentoMask(maskInfo) {
+        var mask;
+
+        if (!maskInfo) {
+            return;
+        }
+        if (maskInfo.created) {
+            mask = maskInfo.mask;
+            if (mask) {
+                mask.remove();
+            }
+            return;
+        }
+        if (!maskInfo.existed) {
+            return;
+        }
+
+        mask = findBentoMasks(maskInfo.maskParade)[0];
+        if (!mask) {
+            throw new Error("The original Bento crop mask could not be restored.");
+        }
+        mask.maskMode = maskInfo.original.maskMode;
+        mask.inverted = maskInfo.original.inverted;
+        mask.rotoBezier = maskInfo.original.rotoBezier;
+        if (maskInfo.original.pathValue !== undefined) {
+            mask.property("ADBE Mask Shape").setValue(maskInfo.original.pathValue);
+            mask.property("ADBE Mask Feather").setValue(maskInfo.original.featherValue);
+            mask.property("ADBE Mask Offset").setValue(maskInfo.original.offsetValue);
+            mask.property("ADBE Mask Opacity").setValue(maskInfo.original.opacityValue);
+        }
+        if (mask.propertyIndex !== maskInfo.original.index) {
+            mask.moveTo(maskInfo.original.index);
+        }
+    }
+
+    function fallbackCropVertices(item, tileRect, fitFactor) {
+        var centerX = item.sourceWidth / 2;
+        var centerY = item.sourceHeight / 2;
+        var halfWidth = tileRect.width / (2 * fitFactor * item.parX);
+        var halfHeight = tileRect.height / (2 * fitFactor);
+
+        return [
+            [centerX - halfWidth, centerY - halfHeight],
+            [centerX + halfWidth, centerY - halfHeight],
+            [centerX + halfWidth, centerY + halfHeight],
+            [centerX - halfWidth, centerY + halfHeight]
+        ];
+    }
+
+    function exactCropVertices(item, tileRect, fitFactor) {
+        var layer = item.layer;
+        var right = tileRect.left + tileRect.width;
+        var bottom = tileRect.top + tileRect.height;
+
+        try {
+            if (typeof layer.compPointToSource === "function") {
+                return [
+                    layer.compPointToSource([tileRect.left, tileRect.top]),
+                    layer.compPointToSource([right, tileRect.top]),
+                    layer.compPointToSource([right, bottom]),
+                    layer.compPointToSource([tileRect.left, bottom])
+                ];
+            }
+        } catch (ignoreExactConversion) {
+        }
+        return fallbackCropVertices(item, tileRect, fitFactor);
+    }
+
+    function applyCropMask(item, tileRect, fitFactor, maskInfo) {
+        var maskParade = maskInfo.maskParade;
+        var cropMask = maskInfo.mask;
+        var otherMaskCount;
+        var shape;
+        var vertices;
+        var zeroTangents = [[0, 0], [0, 0], [0, 0], [0, 0]];
+        var i;
+
+        if (!cropMask) {
+            cropMask = maskParade.addProperty("ADBE Mask Atom");
+            maskInfo.mask = cropMask;
+            maskInfo.created = true;
+            cropMask.name = CROP_MASK_NAME;
+        } else if (cropMask.propertyIndex !== maskParade.numProperties) {
+            cropMask.moveTo(maskParade.numProperties);
+            cropMask = findBentoMasks(maskParade)[0];
+            maskInfo.mask = cropMask;
+        }
+
+        otherMaskCount = 0;
+        for (i = 1; i <= maskParade.numProperties; i++) {
+            if (i !== cropMask.propertyIndex &&
+                    maskParade.property(i).maskMode !== MaskMode.NONE) {
+                otherMaskCount++;
+            }
+        }
+
+        vertices = exactCropVertices(item, tileRect, fitFactor);
+        shape = new Shape();
+        shape.vertices = vertices;
+        shape.inTangents = zeroTangents;
+        shape.outTangents = zeroTangents;
+        shape.closed = true;
+
+        cropMask.rotoBezier = false;
+        cropMask.inverted = false;
+        cropMask.maskMode = otherMaskCount > 0 ? MaskMode.INTERSECT : MaskMode.ADD;
+        cropMask.property("ADBE Mask Shape").setValue(shape);
+        cropMask.property("ADBE Mask Feather").setValue([0, 0]);
+        cropMask.property("ADBE Mask Offset").setValue(0);
+        cropMask.property("ADBE Mask Opacity").setValue(100);
+
+        return otherMaskCount > 0;
+    }
+
+    function applyLayerToTile(item, tileRect, settings) {
+        var fitFactor;
+        var scalePercent;
+        var anchor;
+        var sourceCenterX;
+        var sourceCenterY;
+        var tileCenterX;
+        var tileCenterY;
+        var positionX;
+        var positionY;
+        var hadOtherMasks = false;
+        var needsCrop = settings.fitMode === "Cover" && settings.cropCover;
+        var maskInfo;
+        var originalScale;
+        var originalPosition;
+        var rollbackProblems = [];
+
+        if (settings.fitMode === "Cover") {
+            fitFactor = Math.max(
+                tileRect.width / item.displayWidth,
+                tileRect.height / item.displayHeight
+            );
+        } else {
+            fitFactor = Math.min(
+                tileRect.width / item.displayWidth,
+                tileRect.height / item.displayHeight
+            );
+        }
+        scalePercent = fitFactor * 100;
+        if (!isFiniteNumber(scalePercent) || scalePercent <= 0) {
+            throw new Error("The calculated scale is invalid.");
+        }
+
+        anchor = item.anchorProperty.value;
+        sourceCenterX = item.sourceWidth / 2;
+        sourceCenterY = item.sourceHeight / 2;
+        tileCenterX = tileRect.left + tileRect.width / 2;
+        tileCenterY = tileRect.top + tileRect.height / 2;
+        positionX = tileCenterX - (sourceCenterX - anchor[0]) * fitFactor * item.parX;
+        positionY = tileCenterY - (sourceCenterY - anchor[1]) * fitFactor;
+
+        maskInfo = preflightBentoMask(item.layer, needsCrop);
+        originalScale = copyValue(item.scaleProperty.value);
+        if (item.positionInfo.separated) {
+            originalPosition = [
+                item.positionInfo.xProperty.value,
+                item.positionInfo.yProperty.value
+            ];
+        } else {
+            originalPosition = copyValue(item.positionInfo.leader.value);
+        }
+
+        try {
+            item.scaleProperty.setValue([scalePercent, scalePercent]);
+            setStaticPosition(item.positionInfo, positionX, positionY);
+
+            if (needsCrop) {
+                hadOtherMasks = applyCropMask(item, tileRect, fitFactor, maskInfo);
+            } else if (maskInfo && maskInfo.mask) {
+                maskInfo.mask.maskMode = MaskMode.NONE;
+            }
+        } catch (applyError) {
+            try {
+                item.scaleProperty.setValue(originalScale);
+                if (item.positionInfo.separated) {
+                    item.positionInfo.xProperty.setValue(originalPosition[0]);
+                    item.positionInfo.yProperty.setValue(originalPosition[1]);
+                } else {
+                    item.positionInfo.leader.setValue(originalPosition);
+                }
+            } catch (transformRestoreError) {
+                rollbackProblems.push("Transform rollback failed");
+            }
+            try {
+                restoreBentoMask(maskInfo);
+            } catch (maskRestoreError) {
+                rollbackProblems.push("mask rollback failed");
+            }
+            if (rollbackProblems.length > 0) {
+                throw new Error(applyError.message + " (" + rollbackProblems.join(", ") +
+                    "; use Undo to restore the complete run)");
+            }
+            throw applyError;
+        }
+
+        return hadOtherMasks;
+    }
+
+    function collectItems(comp, selectedLayers) {
+        var items = [];
+        var skipped = [];
+        var inspection;
+        var i;
+
+        for (i = 0; i < selectedLayers.length; i++) {
+            inspection = inspectLayer(selectedLayers[i], comp, i);
+            if (inspection.item) {
+                items.push(inspection.item);
+            } else {
+                skipped.push(layerLabel(selectedLayers[i]) + " — " + inspection.reason);
+            }
+        }
+        return {items: items, skipped: skipped};
+    }
+
+    function makeTileRect(placement, unit, gap, originX, originY, minimumColumn) {
+        return {
+            left: originX + (placement.x - minimumColumn) * (unit + gap),
+            top: originY + placement.y * (unit + gap),
+            width: tilePixelWidth(placement.item.tileW, unit, gap),
+            height: tilePixelWidth(placement.item.tileH, unit, gap)
+        };
+    }
+
+    function makeDetailText(skipped, failed, warnings) {
+        var lines = [];
+        var i;
+
+        if (warnings.length > 0) {
+            lines.push("Warnings:");
+            for (i = 0; i < warnings.length; i++) {
+                lines.push("• " + warnings[i]);
+            }
+        }
+        if (skipped.length > 0) {
+            if (lines.length > 0) {
+                lines.push("");
+            }
+            lines.push("Skipped:");
+            for (i = 0; i < skipped.length && i < 20; i++) {
+                lines.push("• " + skipped[i]);
+            }
+            if (skipped.length > 20) {
+                lines.push("• …and " + (skipped.length - 20) + " more");
+            }
+        }
+        if (failed.length > 0) {
+            if (lines.length > 0) {
+                lines.push("");
+            }
+            lines.push("Failed:");
+            for (i = 0; i < failed.length && i < 20; i++) {
+                lines.push("• " + failed[i]);
+            }
+            if (failed.length > 20) {
+                lines.push("• …and " + (failed.length - 20) + " more");
+            }
+        }
+        return lines.join("\n");
+    }
+
+    function readUISettings(ui) {
+        var fitText = ui.fitMode.selection ? ui.fitMode.selection.text : "Cover";
+        var varietyText = ui.tileVariety.selection ?
+            ui.tileVariety.selection.text : "Balanced";
+        var styleText = ui.packingStyle.selection ?
+            ui.packingStyle.selection.text : "Interlocking";
+        var unitExpression = trimText(ui.unit.text);
+        var gapExpression = trimText(ui.gap.text);
+        var widthExpression = trimText(ui.layoutWidth.text);
+        var tileVariety = varietyText.indexOf("Wild") === 0 ? "Wild" :
+            (varietyText.indexOf("Bold") === 0 ? "Bold" : "Balanced");
+        var packingStyle = styleText.indexOf("Loose") === 0 ? "Loose Mosaic" :
+            (styleText.indexOf("Compact") === 0 ? "Compact" : "Interlocking");
+
+        return {
+            unit: parsePositiveNumber(unitExpression, "Unit Size", false),
+            gap: parsePositiveNumber(gapExpression, "Gap", true),
+            layoutWidth: parsePositiveNumber(widthExpression, "Layout Width", false),
+            unitExpression: unitExpression,
+            gapExpression: gapExpression,
+            layoutWidthExpression: widthExpression,
+            fitMode: fitText === "Contain" ? "Contain" : "Cover",
+            tileVariety: tileVariety,
+            packingStyle: packingStyle,
+            mixOrientations: ui.mixOrientations.value === true,
+            cropCover: ui.cropCover.value === true,
+            centerLayout: ui.centerLayout.value === true
+        };
+    }
+
+    function runLayout(ui, randomize) {
+        var comp = app.project ? app.project.activeItem : null;
+        var settings;
+        var selectedLayers;
+        var collection;
+        var items;
+        var effectiveWidth;
+        var columns;
+        var actualGridWidth;
+        var usedColumns;
+        var minimumColumn;
+        var maximumColumn;
+        var baseSeed;
+        var seed;
+        var rng;
+        var packed;
+        var gridHeight;
+        var originX;
+        var originY;
+        var successes = 0;
+        var successfulCells = 0;
+        var failed = [];
+        var warnings = [];
+        var existingMaskInteractions = 0;
+        var orientationMixes = 0;
+        var fillPercent;
+        var placement;
+        var tileRect;
+        var detailText;
+        var i;
+
+        if (!(comp instanceof CompItem)) {
+            alert("Open a composition, select bitmap/footage layers, and try again.", SCRIPT_NAME);
+            return;
+        }
+
+        try {
+            settings = readUISettings(ui);
+        } catch (settingsError) {
+            alert(settingsError.message, SCRIPT_NAME);
+            return;
+        }
+
+        selectedLayers = comp.selectedLayers;
+        if (!selectedLayers || selectedLayers.length === 0) {
+            alert("Select at least one bitmap/footage layer in the active composition.", SCRIPT_NAME);
+            return;
+        }
+
+        effectiveWidth = Math.min(settings.layoutWidth, Number(comp.width));
+        if (settings.layoutWidth > comp.width + EPSILON) {
+            warnings.push("Layout Width was capped to the composition width (" + comp.width + " px)." );
+        }
+        columns = Math.floor((effectiveWidth + settings.gap) / (settings.unit + settings.gap));
+        if (columns < 1) {
+            columns = 1;
+            warnings.push("Unit Size is wider than the available layout width; a one-column grid was used.");
+        }
+        if (columns > MAX_COLUMNS) {
+            columns = MAX_COLUMNS;
+            warnings.push("The calculated column count was limited to " + MAX_COLUMNS +
+                " for performance. Increase Unit Size or Gap to use the full width.");
+        }
+
+        collection = collectItems(comp, selectedLayers);
+        items = collection.items;
+        if (items.length === 0) {
+            detailText = makeDetailText(collection.skipped, failed, warnings);
+            alert("No supported layers can be arranged.\n\n" + detailText, SCRIPT_NAME);
+            return;
+        }
+
+        baseSeed = makeBaseSeed(items, settings, columns);
+        if (randomize) {
+            randomCounter++;
+            seed = (baseSeed + (new Date()).getTime() + randomCounter * 104729) % 2147483647;
+        } else {
+            seed = baseSeed;
+        }
+        rng = new RNG(seed);
+
+        orientationMixes = assignTileSizes(
+            items, columns, settings.unit, settings.gap, randomize, rng,
+            settings.tileVariety, settings.packingStyle,
+            settings.mixOrientations
+        );
+        if (orientationMixes > 0) {
+            warnings.push(orientationMixes +
+                " tile frame orientation(s) were mixed; layer pixels remain upright.");
+        }
+        try {
+            packed = packTiles(
+                items, columns, seed, randomize, settings.packingStyle
+            );
+        } catch (packingError) {
+            alert("Packing failed: " + packingError.message, SCRIPT_NAME);
+            return;
+        }
+
+        minimumColumn = columns;
+        maximumColumn = 0;
+        for (i = 0; i < packed.placements.length; i++) {
+            minimumColumn = Math.min(minimumColumn, packed.placements[i].x);
+            maximumColumn = Math.max(
+                maximumColumn,
+                packed.placements[i].x + packed.placements[i].item.tileW
+            );
+        }
+        usedColumns = maximumColumn - minimumColumn;
+        actualGridWidth = tilePixelWidth(usedColumns, settings.unit, settings.gap);
+        gridHeight = tilePixelWidth(packed.usedRows, settings.unit, settings.gap);
+        if (settings.centerLayout) {
+            originX = actualGridWidth <= comp.width ? (comp.width - actualGridWidth) / 2 : 0;
+            originY = gridHeight <= comp.height ? (comp.height - gridHeight) / 2 : 0;
+        } else {
+            originX = 0;
+            originY = 0;
+        }
+        if (actualGridWidth > comp.width + EPSILON) {
+            warnings.push("The grid is wider than the composition because Unit Size exceeds the available width.");
+        }
+        if (gridHeight > comp.height + EPSILON) {
+            warnings.push("The grid is " + Math.round(gridHeight) +
+                " px tall and extends below the composition. Reduce Unit Size/Gap to fit it.");
+        }
+
+        saveUISettings(settings);
+        app.beginUndoGroup(SCRIPT_NAME + (randomize ? " — Randomize" : " — Repack"));
+        try {
+            for (i = 0; i < packed.placements.length; i++) {
+                placement = packed.placements[i];
+                tileRect = makeTileRect(
+                    placement, settings.unit, settings.gap, originX, originY, minimumColumn
+                );
+                try {
+                    if (applyLayerToTile(placement.item, tileRect, settings)) {
+                        existingMaskInteractions++;
+                    }
+                    successes++;
+                    successfulCells += placement.item.tileArea;
+                } catch (layerError) {
+                    failed.push(layerLabel(placement.item.layer) + " — " + layerError.message);
+                }
+            }
+        } finally {
+            app.endUndoGroup();
+        }
+
+        if (existingMaskInteractions > 0) {
+            warnings.push(existingMaskInteractions +
+                " layer(s) already had masks; the Bento crop uses Intersect mode on those layers.");
+        }
+        if (failed.length > 0) {
+            warnings.push("Failed layer slots remain empty; use Undo to revert the complete run if needed.");
+        }
+
+        fillPercent = packed.usedRows > 0 && usedColumns > 0 ?
+            Math.round((successfulCells / (packed.usedRows * usedColumns)) * 100) : 100;
+        ui.status.text = successes + " arranged · " + usedColumns + " col × " +
+            packed.usedRows + " row · " + fillPercent + "% grid fill" +
+            (collection.skipped.length + failed.length > 0 ?
+                " · " + (collection.skipped.length + failed.length) + " skipped/failed" : "");
+        detailText = makeDetailText(collection.skipped, failed, warnings);
+        ui.status.helpTip = detailText.length > 0 ? detailText :
+            "All selected supported layers were arranged successfully.";
+        if (failed.length > 0) {
+            alert(failed.length + " layer(s) could not be completed.\n\n" +
+                makeDetailText([], failed, warnings), SCRIPT_NAME);
+        }
+    }
+
+    function deleteSelectedMasks(ui, deleteAll) {
+        var comp = app.project ? app.project.activeItem : null;
+        var selectedLayers;
+        var targets = [];
+        var skipped = [];
+        var failed = [];
+        var matchingCount = 0;
+        var removableCount = 0;
+        var lockedCount = 0;
+        var removed = 0;
+        var changedLayers = 0;
+        var maskParade;
+        var mask;
+        var layer;
+        var layerLocked;
+        var maskLocked;
+        var matchesScope;
+        var layerMatchCount;
+        var hasRemovable;
+        var removedFromLayer;
+        var scopeLabel = deleteAll ? "mask" : "Bento mask";
+        var confirmationText;
+        var detailText;
+        var i;
+        var j;
+
+        if (!(comp instanceof CompItem)) {
+            alert("Open a composition, select layers, and try again.", SCRIPT_NAME);
+            return;
+        }
+
+        selectedLayers = comp.selectedLayers;
+        if (!selectedLayers || selectedLayers.length === 0) {
+            alert("Select at least one layer whose masks should be removed.",
+                SCRIPT_NAME);
+            return;
+        }
+
+        for (i = 0; i < selectedLayers.length; i++) {
+            layer = selectedLayers[i];
+            maskParade = layer.property("ADBE Mask Parade");
+            if (!maskParade) {
+                continue;
+            }
+            layerMatchCount = 0;
+            hasRemovable = false;
+            try {
+                layerLocked = layer.locked === true;
+            } catch (ignoreLayerLock) {
+                layerLocked = true;
+            }
+            for (j = 1; j <= maskParade.numProperties; j++) {
+                mask = maskParade.property(j);
+                matchesScope = mask &&
+                    (deleteAll || mask.name === CROP_MASK_NAME);
+                if (!matchesScope) {
+                    continue;
+                }
+                matchingCount++;
+                layerMatchCount++;
+                if (layerLocked) {
+                    lockedCount++;
+                    continue;
+                }
+                try {
+                    maskLocked = mask.locked === true;
+                } catch (ignoreMaskLock) {
+                    maskLocked = true;
+                }
+                if (!maskLocked) {
+                    hasRemovable = true;
+                    removableCount++;
+                } else {
+                    lockedCount++;
+                    skipped.push(layerLabel(layer) + " — " + mask.name +
+                        " is locked");
+                }
+            }
+            if (layerLocked && layerMatchCount > 0) {
+                skipped.push(layerLabel(layer) + " — Layer is locked (" +
+                    layerMatchCount + " " + scopeLabel +
+                    (layerMatchCount === 1 ? "" : "s") + ")");
+            }
+            if (hasRemovable) {
+                targets.push(layer);
+            }
+        }
+
+        if (matchingCount === 0) {
+            ui.status.text = deleteAll ?
+                "No masks found on the selected layers." :
+                "No Bento crop masks found on the selected layers.";
+            ui.status.helpTip = deleteAll ?
+                "No masks were changed." :
+                "Only masks named " + CROP_MASK_NAME + " are removed.";
+            return;
+        }
+
+        if (removableCount === 0) {
+            ui.status.text = "No removable " + scopeLabel +
+                (matchingCount === 1 ? "" : "s") + " · " +
+                lockedCount + " locked";
+            detailText = makeDetailText(skipped, failed, []);
+            ui.status.helpTip = detailText.length > 0 ? detailText :
+                "Locked masks and masks on locked layers were preserved.";
+            alert("No selected " + scopeLabel +
+                (matchingCount === 1 ? " could" : "s could") +
+                " be removed.\n\n" + detailText, SCRIPT_NAME);
+            return;
+        }
+
+        if (deleteAll) {
+            confirmationText = "Delete ALL unlocked masks from the selected layers?\n\n" +
+                removableCount + " mask" + (removableCount === 1 ? "" : "s") +
+                " on " + targets.length + " layer" +
+                (targets.length === 1 ? "" : "s") + " will be deleted.";
+            if (lockedCount > 0) {
+                confirmationText += "\n" + lockedCount +
+                    " matching mask" + (lockedCount === 1 ? " is" : "s are") +
+                    " locked or on locked layers and will be skipped.";
+            }
+            confirmationText += "\n\nThis includes user-created, animated, " +
+                "expression-driven, disabled, and Bento masks. Mask indices and " +
+                "expressions that reference them may change. Scale and Position " +
+                "remain unchanged. Immediate Undo restores this operation.\n\nContinue?";
+            if (!confirm(confirmationText, true, SCRIPT_NAME)) {
+                ui.status.text = "All-mask deletion cancelled.";
+                ui.status.helpTip = "No masks were changed.";
+                return;
+            }
+        }
+
+        app.beginUndoGroup(SCRIPT_NAME +
+            (deleteAll ? " — Delete All Masks" : " — Clear Bento Masks"));
+        try {
+            for (i = 0; i < targets.length; i++) {
+                layer = targets[i];
+                removedFromLayer = 0;
+                maskParade = layer.property("ADBE Mask Parade");
+                for (j = maskParade.numProperties; j >= 1; j--) {
+                    mask = maskParade.property(j);
+                    matchesScope = mask &&
+                        (deleteAll || mask.name === CROP_MASK_NAME);
+                    if (!matchesScope) {
+                        continue;
+                    }
+                    try {
+                        maskLocked = mask.locked === true;
+                    } catch (readLockError) {
+                        maskLocked = true;
+                    }
+                    if (maskLocked) {
+                        continue;
+                    }
+                    try {
+                        mask.remove();
+                        removed++;
+                        removedFromLayer++;
+                    } catch (removeError) {
+                        failed.push(layerLabel(layer) + " — " + removeError.message);
+                    }
+                    maskParade = layer.property("ADBE Mask Parade");
+                }
+                if (removedFromLayer > 0) {
+                    changedLayers++;
+                }
+            }
+        } finally {
+            app.endUndoGroup();
+        }
+
+        ui.status.text = removed + " " + scopeLabel +
+            (removed === 1 ? "" : "s") +
+            " removed from " + changedLayers + " layer" +
+            (changedLayers === 1 ? "" : "s") +
+            (lockedCount > 0 ? " · " + lockedCount + " locked" : "") +
+            (failed.length > 0 ? " · " + failed.length + " failed" : "");
+        detailText = makeDetailText(skipped, failed, []);
+        ui.status.helpTip = detailText.length > 0 ? detailText :
+            "Scale and Position were left unchanged. Use Undo to restore the masks.";
+        if (failed.length > 0 || skipped.length > 0) {
+            alert((deleteAll ? "All-mask deletion" : "Bento mask cleanup") +
+                " completed with exceptions.\n\n" + detailText,
+                SCRIPT_NAME);
+        }
+    }
+
+    function clearBentoMasks(ui) {
+        deleteSelectedMasks(ui, false);
+    }
+
+    function deleteAllSelectedMasks(ui) {
+        deleteSelectedMasks(ui, true);
+    }
+
+    // ── 패널 연결부 ──────────────────────────────────────────
+    function makeUiShim(settings) {
+        return {
+            unit:        { text: String(settings.unit) },
+            gap:         { text: String(settings.gap) },
+            layoutWidth: { text: String(settings.width) },
+            fitMode:     { selection: { text: settings.fit } },
+            tileVariety: { selection: { text: settings.variety } },
+            packingStyle:{ selection: { text: settings.style } },
+            mixOrientations: { value: settings.mix === true },
+            cropCover:   { value: settings.crop === true },
+            centerLayout:{ value: settings.center === true },
+            status:      { text: "", helpTip: "" }
+        };
+    }
+    return {
+        run: function (settings, randomize) {
+            __messages = [];
+            var ui = makeUiShim(settings);
+            runLayout(ui, randomize === true);
+            return { status: ui.status.text, detail: ui.status.helpTip, messages: __messages };
+        },
+        clearMasks: function () {
+            __messages = [];
+            var ui = makeUiShim({ unit: 160, gap: 8, width: 1920, fit: "Cover", variety: "Balanced", style: "Interlocking" });
+            clearBentoMasks(ui);
+            return { status: ui.status.text, detail: ui.status.helpTip, messages: __messages };
+        }
+    };
+})();
+
+// 패널 진입점: settings JSON {unit,gap,width,fit,variety,style,mix,crop,center}
+function bentoGrid(jsonStr, randomize) {
+    var comp = app.project ? app.project.activeItem : null;
+    if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
+    var settings;
+    try { settings = JSON.parse(jsonStr); } catch (e) { return err("설정 파싱 실패"); }
+    var r = BANG_Bento.run(settings, randomize === true || randomize === "true");
+    if (!r.status && r.messages.length) return err(r.messages.join(" / "));
+    return ok({ status: r.status, detail: r.detail, messages: r.messages });
+}
+function bentoClearMasks() {
+    var comp = app.project ? app.project.activeItem : null;
+    if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
+    var r = BANG_Bento.clearMasks();
+    if (!r.status && r.messages.length) return err(r.messages.join(" / "));
+    return ok({ status: r.status, detail: r.detail, messages: r.messages });
 }

@@ -1,0 +1,35 @@
+  <!-- ── BANG_Toolbox : Cloner pseudo effect ──
+       1회 등록용. Support Files/PresetEffects.xml 의 </Effects> 바로 앞에 삽입 (tools/pseudo/register-pseudo.ps1).
+       등록 후 AE 재시작 → 레이어에 적용 → "Save Animation Preset" 으로 jsx/BANG_Cloner.ffx 저장.
+       .ffx 는 정의를 내장하므로 다른 PC 에선 XML 수정 없이 applyPreset 만으로 동작한다. -->
+  <Effect matchname="Pseudo/BANG_Cloner" name="BANG 클로너">
+    <Popup name="배치 모드" hold="true" default="1" popup_string="Linear|Grid|Radial"/>
+    <Slider name="복제 개수" default="5" valid_min="1" valid_max="500" slider_min="1" slider_max="50" precision="0"/>
+    <Group name="Linear">
+      <Point3D name="오프셋" default_x="0" default_y="0" default_z="0"/>
+    </Group>
+    <Group name="Grid">
+      <Slider name="열 개수" default="3" valid_min="1" valid_max="200" slider_min="1" slider_max="20" precision="0"/>
+      <Point3D name="간격" default_x="0" default_y="0" default_z="0"/>
+    </Group>
+    <Group name="Radial">
+      <Slider name="반지름" default="300" valid_min="0" valid_max="30000" slider_min="0" slider_max="2000" precision="1"/>
+      <Angle name="시작 각도" default="0"/>
+      <Angle name="끝 각도" default="360"/>
+      <Checkbox name="반지름 방향 정렬" default="false"/>
+    </Group>
+    <Group name="단계 변화">
+      <Angle name="회전 증가" default="0"/>
+      <Slider name="크기 증가 %" default="0" valid_min="-100" valid_max="1000" slider_min="-50" slider_max="50" precision="1"/>
+      <Slider name="불투명도 증가" default="0" valid_min="-100" valid_max="100" slider_min="-50" slider_max="50" precision="1"/>
+    </Group>
+    <Group name="랜덤">
+      <Slider name="시드" default="1" valid_min="0" valid_max="99999" slider_min="0" slider_max="100" precision="0"/>
+      <Point3D name="위치 랜덤" default_x="0" default_y="0" default_z="0"/>
+      <Angle name="회전 랜덤" default="0"/>
+      <Slider name="크기 랜덤 %" default="0" valid_min="0" valid_max="100" slider_min="0" slider_max="50" precision="1"/>
+    </Group>
+    <Group name="실행">
+      <Checkbox name="래스터라이즈" default="false"/>   <!-- 파라미터 이름 ~31바이트 제한: 짧게 -->
+    </Group>
+  </Effect>

@@ -29,6 +29,13 @@
    폴더 이름은 반드시 com.bang.toolbox 여야 합니다.
    The folder name must be exactly com.bang.toolbox.
 
+2-1) (선택) plugins 폴더의 .aex 파일을 아래 경로에 복사합니다 — 네이티브 이펙트(BANG Cloner · BANG Stroke).
+     관리자 권한 필요. After Effects 가 실행 중이면 먼저 종료하세요.
+
+     C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Plug-ins\BANG
+     (Optional) Copy the .aex files from the plugins folder into the path above
+     (native effects such as BANG Stroke). Admin rights required; quit AE first.
+
 3) After Effects 를 실행하고
    창(Window) > 확장(Extensions) > BANG_Toolbox 를 선택합니다.
 

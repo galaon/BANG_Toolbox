@@ -344,10 +344,24 @@ pfAllBtn.addEventListener('click', () => {
   pfAllBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
 });
 
+// Pad: 휠로 ±1(Shift ±10), 값 변경 시 자동 재실행 (400ms 디바운스)
+(function initPad() {
+  const pad = document.getElementById('pf-margin');
+  let timer = null;
+  const rerun = () => { clearTimeout(timer); timer = setTimeout(() => document.getElementById('btn-precomp-fit').click(), 400); };
+  pad.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    pad.value = Math.max(0, (parseInt(pad.value, 10) || 0) + (e.deltaY < 0 ? step : -step));
+    rerun();
+  }, { passive: false });
+  pad.addEventListener('input', rerun);
+})();
+
 document.getElementById('btn-precomp-fit').addEventListener('click', () => {
   const margin = Math.max(0, parseFloat(document.getElementById('pf-margin').value) || 0);
   const mode   = pfAllBtn.getAttribute('aria-pressed') === 'true' ? 'all' : 'current';
-  setStatus(mode === 'all' ? 'Fitting precomp (all frames)...' : 'Fitting precomp...');
+  setStatus(mode === 'all' ? 'Precomp Crop (all frames)...' : 'Precomp Crop...');
   evalScript(`fitPrecomp(${margin}, "${mode}")`, (result) => {
     try {
       const res = JSON.parse(result);
@@ -355,10 +369,10 @@ document.getElementById('btn-precomp-fit').addEventListener('click', () => {
         const parts = res.fitted.map(f =>
           `${f.name}: ${f.from[0]}×${f.from[1]} → ${f.to[0]}×${f.to[1]}` +
           (f.instances ? ` (${f.instances} inst.)` : ''));
-        let msg = 'Precomp Fit — ' + parts.join(' · ');
+        let msg = 'Precomp Crop — ' + parts.join(' · ');
         if (res.warnings.length) msg += ` · ${res.warnings.length} warning(s)`;
         setStatus(msg, res.warnings.length ? 'default' : 'success');
-        if (res.warnings.length) console.warn('Precomp Fit warnings:', res.warnings);
+        if (res.warnings.length) console.warn('Precomp Crop warnings:', res.warnings);
       } else {
         setStatus('Error: ' + res.error, 'error');
       }
@@ -370,72 +384,161 @@ document.getElementById('btn-precomp-fit').addEventListener('click', () => {
 
 // ── Align 3D ──────────────────────────────────────────────────
 
-const alRefBtn = document.getElementById('al-ref');
-const alZBtn   = document.getElementById('al-z');
-const alZRow   = document.getElementById('al-z-row');
+const alRefBtn = document.getElementById('al-ref');   // role=switch: false=Selection, true=Comp
 alRefBtn.addEventListener('click', () => {
-  const on = alRefBtn.getAttribute('aria-pressed') !== 'true';
-  alRefBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-});
-alZBtn.addEventListener('click', () => {
-  const on = alZBtn.getAttribute('aria-pressed') !== 'true';
-  alZBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  alZRow.hidden = !on;
+  const on = alRefBtn.getAttribute('aria-checked') !== 'true';
+  alRefBtn.setAttribute('aria-checked', on ? 'true' : 'false');
 });
 
 document.querySelectorAll('.al-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const axis = btn.dataset.axis, mode = btn.dataset.mode;
-    const ref  = alRefBtn.getAttribute('aria-pressed') === 'true' ? 'comp' : 'selection';
+    const ref  = alRefBtn.getAttribute('aria-checked') === 'true' ? 'comp' : 'selection';
+    // "xy" = 가로·세로 중앙 동시 정렬 (x → y 순차 호출, 각각 undo 그룹)
+    const calls = axis === 'xy' ? [['x', mode], ['y', mode]] : [[axis, mode]];
     setStatus(`Aligning ${axis.toUpperCase()} ${mode}...`);
-    evalScript(`alignLayers("${axis}", "${mode}", "${ref}")`, (result) => {
-      try {
-        const res = JSON.parse(result);
-        if (res.success) {
-          let msg = `Align ${axis.toUpperCase()} ${mode} (${ref}) — ${res.moved} moved`;
-          if (res.skipped) msg += `, ${res.skipped} skipped`;
-          if (res.warnings.length) { msg += `, ${res.warnings.length} warning(s)`; console.warn(res.warnings); }
-          setStatus(msg, 'success');
-        } else {
-          setStatus('Error: ' + res.error, 'error');
-        }
-      } catch (e) {
-        setStatus('Unexpected response', 'error');
+    const run = (i, acc) => {
+      if (i >= calls.length) {
+        let msg = `Align ${axis.toUpperCase()} ${mode} (${ref}) — ${acc.moved} moved`;
+        if (acc.skipped) msg += `, ${acc.skipped} skipped`;
+        if (acc.warnings.length) { msg += `, ${acc.warnings.length} warning(s)`; console.warn(acc.warnings); }
+        setStatus(msg, 'success');
+        return;
       }
-    });
+      evalScript(`alignLayers("${calls[i][0]}", "${calls[i][1]}", "${ref}")`, (result) => {
+        try {
+          const res = JSON.parse(result);
+          if (!res.success) { setStatus('Error: ' + res.error, 'error'); return; }
+          acc.moved += res.moved; acc.skipped += res.skipped; acc.warnings.push(...res.warnings);
+          run(i + 1, acc);
+        } catch (e) { setStatus('Unexpected response', 'error'); }
+      });
+    };
+    run(0, { moved: 0, skipped: 0, warnings: [] });
   });
 });
 
 // ── Cloner ────────────────────────────────────────────────────
+// 설정은 전부 소스 레이어의 단일 이펙트 "BANG 클로너"(jsx/BANG_Cloner.ffx). 패널 버튼은 "적용/갱신" 하나.
+//   · 이펙트 없음 → 이펙트 적용 + 복제   · 있음 → '복제 개수'/'배치 모드'로 갱신
+//   · '래스터라이즈' 체크 → 클론을 독립 레이어로 굳힘   · '복제 개수' 1 → 클론 제거
 
-document.getElementById('btn-cloner').addEventListener('click', () => {
-  const count = Math.min(500, Math.max(2, parseInt(document.getElementById('cl-count').value, 10) || 5));
-  const mode  = document.getElementById('cl-mode').value;
-  setStatus('Cloning...');
-  evalScript(`createCloner(${count}, ${mode})`, (result) => {
+function clonerFfxPath() {
+  try {
+    // CEP 가 file:///C:/... URL 형태로 돌려주는 경우가 있어 일반 경로로 정규화
+    let ext = csInterface.getSystemPath(SystemPath.EXTENSION) || '';
+    if (/^file:/i.test(ext)) ext = decodeURIComponent(ext.replace(/^file:\/{2,3}/i, ''));
+    return (ext + '/jsx/BANG_Cloner.ffx').replace(/\\/g, '/');
+  } catch (e) { return ''; }
+}
+
+// 자동 갱신: 소스/클론 선택 중 '복제 개수' ≠ 현재 클론 수 이거나 '래스터라이즈' 체크 → 값이 1초간 안정되면 applyCloner
+(function initClonerAuto() {
+  const btn = document.getElementById('cl-auto');
+  btn.addEventListener('click', () => btn.setAttribute('aria-pressed', btn.getAttribute('aria-pressed') !== 'true' ? 'true' : 'false'));
+  let last = null, stable = 0, busy = false;
+  setInterval(() => {
+    if (busy || btn.getAttribute('aria-pressed') !== 'true') return;
+    if (document.getElementById('status-text').textContent.startsWith('Cloner')) return;
+    busy = true;
+    evalScript('clonerPollState()', (result) => {
+      busy = false;
+      try {
+        const st = JSON.parse(result);
+        if (!st.success || !st.active) { last = null; stable = 0; return; }
+        const want = Math.max(1, st.count), need = st.bake || (want - 1 !== st.clones);
+        const key = `${st.source}|${want}|${st.bake ? 1 : 0}`;
+        if (!need) { last = key; stable = 0; return; }
+        if (key === last) stable++; else { last = key; stable = 0; }
+        if (stable >= 1) { stable = 0; applyScriptCloner(); }
+      } catch (e) { /* ignore */ }
+    });
+  }, 700);
+})();
+
+// 네이티브 이펙트 적용 (BANG Cloner / BANG Stroke). 플러그인이 없으면 onMissing() (클로너는 스크립트 클로너로 폴백)
+function applyNative(matchName, label, onMissing) {
+  setStatus(label + '...');
+  evalScript(`applyNativeEffect(${JSON.stringify(matchName)})`, (result) => {
     try {
       const res = JSON.parse(result);
-      if (res.success) {
-        setStatus(`${res.recloned ? 'Re-cloned' : 'Cloner'}: "${res.source}" × ${res.count} (${res.clones} clones)` +
-                  (res.recloned ? ' — count from Cloner Count slider' : ''), 'success');
-      } else {
-        setStatus('Error: ' + res.error, 'error');
+      if (!res.success) { setStatus('Error: ' + res.error, 'error'); return; }
+      if (res.missing) {
+        if (onMissing) { onMissing(); return; }
+        setStatus(`${label}: 네이티브 플러그인(${matchName}.aex)이 설치되어 있지 않습니다 — INSTALL.txt 2-1 참고`, 'error');
+        return;
       }
+      const parts = [];
+      if (res.added) parts.push(`${res.added}개 레이어에 적용`);
+      if (res.kept) parts.push(`${res.kept}개는 이미 적용됨`);
+      setStatus(`${label}: ${parts.join(', ') || '대상 없음'} — 설정은 Effect Controls 에서`, res.added || res.kept ? 'success' : 'error');
     } catch (e) {
       setStatus('Unexpected response', 'error');
     }
   });
-});
+}
 
-document.getElementById('btn-cloner-remove').addEventListener('click', () => {
-  setStatus('Removing clones...');
-  evalScript('removeClones()', (result) => {
+// 스크립트 클로너 (Pseudo Effect "BANG 클로너" + 레이어 복제) — 네이티브 플러그인이 없을 때의 폴백
+function applyScriptCloner() {
+  setStatus('Cloner...');
+  evalScript(`applyCloner(${JSON.stringify(clonerFfxPath())})`, (result) => {
     try {
       const res = JSON.parse(result);
-      if (res.success) setStatus(`Removed ${res.removed} clone(s)`, 'success');
-      else setStatus('Error: ' + res.error, 'error');
+      if (!res.success) { setStatus('Error: ' + res.error, 'error'); return; }
+      const m = {
+        created: `클로너 적용: "${res.source}" × ${res.count} — 개수·배치는 이펙트 'BANG 클로너'에서 바꾼 뒤 다시 클릭`,
+        recloned: `클론 갱신: "${res.source}" × ${res.count}`,
+        removed: `클론 제거: "${res.source}" (복제 개수 1)`,
+        baked: `래스터라이즈: ${res.baked} clone(s) → 독립 레이어 (이펙트 제거)`
+      };
+      setStatus(m[res.action] || 'Cloner: done', 'success');
     } catch (e) {
       setStatus('Unexpected response', 'error');
     }
   });
-});
+}
+
+// Cloner 타일: 네이티브 "BANG Cloner"(인스턴스 렌더, 타이밍 정확) 우선, 없으면 스크립트 클로너
+document.getElementById('btn-cloner').addEventListener('click', () => applyNative('BANG Cloner', 'Cloner', applyScriptCloner));
+document.getElementById('btn-stroke').addEventListener('click', () => applyNative('BANG Stroke', 'Stroke'));
+
+// ── Bento Grid (BentoGrid.jsx 이식) ───────────────────────────
+
+(function initBento() {
+  const $ = id => document.getElementById(id);
+  // 접이식 카드
+  const head = $('bento-toggle'), body = $('bento-body');
+  const setOpen = (open) => { head.setAttribute('aria-expanded', open ? 'true' : 'false'); body.hidden = !open; try { localStorage.setItem('bang-bento-open', open ? '1' : '0'); } catch (e) {} };
+  head.addEventListener('click', () => setOpen(head.getAttribute('aria-expanded') !== 'true'));
+  try { setOpen(localStorage.getItem('bang-bento-open') === '1'); } catch (e) {}
+  ['bg-crop', 'bg-center', 'bg-mix'].forEach(id => {
+    const b = $(id);
+    b.addEventListener('click', () => b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true' ? 'true' : 'false'));
+  });
+  const settings = () => ({
+    unit: $('bg-unit').value, gap: $('bg-gap').value, width: $('bg-width').value,
+    fit: $('bg-fit').value, variety: $('bg-variety').value, style: $('bg-style').value,
+    crop: $('bg-crop').getAttribute('aria-pressed') === 'true',
+    center: $('bg-center').getAttribute('aria-pressed') === 'true',
+    mix: $('bg-mix').getAttribute('aria-pressed') === 'true'
+  });
+  const report = (label) => (result) => {
+    try {
+      const r = JSON.parse(result);
+      if (!r.success) { setStatus('Error: ' + r.error, 'error'); return; }
+      setStatus(`${label}: ${r.status || 'done'}`, 'success');
+      if (r.detail) console.log('Bento detail:\n' + r.detail);
+      if (r.messages && r.messages.length) console.warn('Bento messages:', r.messages);
+    } catch (e) { setStatus('Unexpected response', 'error'); }
+  };
+  const run = (randomize) => {
+    setStatus(randomize ? 'Bento: randomizing...' : 'Bento: repacking...');
+    evalScript(`bentoGrid(${JSON.stringify(JSON.stringify(settings()))}, ${randomize})`, report(randomize ? 'Bento 무작위' : 'Bento 배치'));
+  };
+  $('btn-bento-repack').addEventListener('click', () => run(false));
+  $('btn-bento-random').addEventListener('click', () => run(true));
+  $('btn-bento-clear').addEventListener('click', () => {
+    setStatus('Bento: clearing masks...');
+    evalScript('bentoClearMasks()', report('Bento 마스크 제거'));
+  });
+})();

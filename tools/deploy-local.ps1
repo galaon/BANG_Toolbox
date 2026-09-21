@@ -67,7 +67,7 @@ $rcArgs = @(
   "`"$RepoRoot`"", "`"$target`"",
   '/MIR', '/NJH', '/NP', '/NDL',
   '/XD', '.git', 'tools', 'dist', 'backups',
-  '/XF', '.gitignore', 'README.md', '*.patch'
+  '/XF', '.gitignore', 'README.md', 'AGENTS.md', 'CHANGELOG.md', '*.patch'
 )
 if ($WhatIf) { $rcArgs += '/L' }
 

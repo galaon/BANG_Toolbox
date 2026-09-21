@@ -67,13 +67,22 @@ else {
   Write-Warning "icons\ not found in repo - shipping empty icons\ (panel shows no tab icon)"
 }
 
+# native plug-ins (.aex) — built by nativeuild-native.ps1 (Release). Optional: skipped with a warning if absent.
+$aexDir = Join-Path $RepoRoot 'native\out\Release'
+$aex = if (Test-Path $aexDir) { Get-ChildItem $aexDir -Filter '*.aex' } else { @() }
+if ($aex.Count -gt 0) {
+  $plugDst = Join-Path $pkgRoot 'plugins'
+  New-Item -ItemType Directory -Force -Path $plugDst | Out-Null
+  $aex | ForEach-Object { Copy-Item $_.FullName $plugDst }
+} else { Write-Warning "no .aex in native\out\Release - package will not include native plug-ins" }
+
 # installer helpers next to the extension folder
 Copy-Item (Join-Path $RepoRoot 'dist\INSTALL.txt')              $pkgRoot
 Copy-Item (Join-Path $RepoRoot 'dist\EnablePlayerDebugMode.reg') $pkgRoot
 
 # safety: nothing repo-only leaked into the package
 $leak = Get-ChildItem $pkgRoot -Recurse -Force |
-        Where-Object { $_.Name -in '.git', '.gitignore', '.debug', 'README.md', 'tools', 'dist' }
+        Where-Object { $_.Name -in '.git', '.gitignore', '.debug', 'README.md', 'AGENTS.md', 'CHANGELOG.md', 'tools', 'dist' }
 if ($leak) { throw "Repo-only item leaked into package: $($leak.FullName -join ', ')" }
 
 # -- zip --------------------------------------------------------------------

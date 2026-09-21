@@ -1,0 +1,13 @@
+# native build outputs (source only in git)
+out/
+**/x64/
+**/*.rc
+**/*.rr
+**/*.rrc
+**/*.aex
+**/*.pdb
+**/*.ilk
+**/*.exp
+**/*.lib
+**/*.user
+**/.vs/
