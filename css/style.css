@@ -107,6 +107,27 @@ html, body {
 .null-btn__icon  { width: 1.82rem; height: 1.82rem; flex-shrink: 0; }   /* 구 20 */
 .null-btn__label { font-size: 0.91rem; font-weight: 400; white-space: nowrap; }  /* 구 10 */
 
+/* ── Quote Align Button ── */
+.qa-row { display: flex; }
+.qa-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  height: 2.6rem;
+  background: var(--bg-btn);
+  border-radius: var(--radius-btn);
+  border: none;
+  color: var(--text-secondary);
+  transition: var(--tr-btn);
+  padding: 0 0.73rem;
+}
+.qa-btn:hover  { background: var(--accent-glow); color: var(--accent); }
+.qa-btn:active { background: var(--accent-deep); color: var(--accent-hover); }
+.qa-btn__icon  { width: 1.27rem; height: 1.27rem; flex-shrink: 0; }
+.qa-btn__label { font-size: 0.91rem; font-weight: 400; white-space: nowrap; }
+
 /* ── Anchor Point Widget ── */
 .ap-widget {
   display: grid;

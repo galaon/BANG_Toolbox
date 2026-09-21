@@ -310,3 +310,27 @@ document.getElementById('btn-create-green-null').addEventListener('click', () =>
     }
   });
 });
+
+// ── Quote Align (따옴표 정렬) ─────────────────────────────────
+
+document.getElementById('btn-quote-align').addEventListener('click', () => {
+  setStatus('Aligning quotes...');
+  evalScript('applyQuoteHang()', (result) => {
+    try {
+      const res = JSON.parse(result);
+      if (res.success) {
+        const parts = [];
+        if (res.rebuilt) parts.push(`${res.rebuilt} converted`);
+        if (res.boxSet)  parts.push(`${res.boxSet} box set`);
+        if (res.skipped) parts.push(`${res.skipped} skipped`);
+        if (res.errors)  parts.push(`${res.errors} error(s)`);
+        setStatus('Quote Align: ' + (parts.join(' · ') || 'nothing to do'),
+                  res.errors ? 'error' : 'success');
+      } else {
+        setStatus('Error: ' + res.error, 'error');
+      }
+    } catch (e) {
+      setStatus('Unexpected response', 'error');
+    }
+  });
+});

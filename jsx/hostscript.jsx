@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 //  hostscript.jsx — ExtendScript (After Effects API)
 //  모든 함수는 JSON 문자열을 반환한다.
 //  { success: true/false, ... } 형태
@@ -416,4 +416,341 @@ function createGreenNull() {
         app.endUndoGroup();
         return err(e.toString());
     }
+}
+
+
+// ============================================================
+//  Quote Align (따옴표 정렬) — 인용 자막 행잉 펑추에이션
+//  선택 레이어 스마트 라우팅:
+//   · 박스 텍스트  → hangingRoman + 높이 자동성장 세트 적용
+//   · 포인트 텍스트 → 박스 레이어로 리빌드 변환 (첫 줄 고정 정합)
+//   · 그 외        → 사유와 함께 건너뜀
+//  규칙: "정렬 기둥은 첫 글자가 정의한다. 행두의 여는 부호는
+//         개수와 무관하게 전부 여백으로 내어쓴다."
+//  요구: AE 24.3+ (paragraphRange / hangingRoman 스크립팅)
+// ============================================================
+
+// ── Quote Align 설정 ─────────────────────────────────────────
+var QH_ANCHOR_MODE   = "FIRSTLINE";        // "FIRSTLINE"(첫 줄 고정) | "BODY"(본문 고정)
+var QH_OPTICAL_OFFSET = 0;                 // px. 폭 측정 폴백 보정
+var QH_QUOTE_CHARS   = "\u201C\"\u2018'";  // 여는 따옴표로 인정할 문자
+var QH_BOX_MARGIN_X  = 1.0;                // 박스 너비 여유 (폰트 크기 배수)
+var QH_BOX_MARGIN_Y  = 1.0;
+var QH_USE_AUTOFIT   = true;               // 박스 높이 자동 성장
+var QH_REMOVE_ORIGINAL  = true;            // 원본 삭제 (새 박스 레이어가 원본 이름을 이어받음; 되돌리기는 Ctrl+Z)
+
+// 완료 팝업 메시지 (자유롭게 수정)
+var QH_MSG_DONE =
+    "따옴표 정렬 완료!\n" +
+    "\n" +
+    "\u203B 주의\n" +
+    "\u00B7 키프레임\u00B7이펙트\u00B7표현식은 새 레이어로 옮겨지지 않습니다.\n" +
+    "\u00B7 복잡하게 세팅된 레이어는 결과가 어긋날 수 있습니다.\n" +
+    "\u2192 본격적인 작업 전에 먼저 실행해 주세요.\n" +
+    "\n" +
+    "되돌리기: Ctrl+Z";
+
+// ── Quote Align 유틸리티 ─────────────────────────────────────
+
+function qh_try(fn) { try { fn(); return true; } catch (e) { return false; } }
+
+function qh_firstValidLine(bl, startIdx) {
+    var n = Math.floor(bl.length / 4);
+    for (var i = startIdx; i < n; i++) { if (bl[i * 4] < 1e30) return i; }
+    for (var j = 0; j < n; j++) { if (bl[j * 4] < 1e30) return j; }
+    return -1;
+}
+
+// 박스 텍스트: 행잉 세트만 적용
+function qh_applyBoxSet(ly, lines) {
+    var prop = ly.property("Source Text");
+    var doc = prop.value;
+    doc.hangingRoman = true;
+    if (QH_USE_AUTOFIT) {
+        qh_try(function () {
+            if (typeof BoxAutoFitPolicy !== "undefined") {
+                doc.boxAutoFitPolicy = BoxAutoFitPolicy.HEIGHT_PRECISE_BOUNDS;
+            }
+        });
+    }
+    prop.setValue(doc);
+    lines.push("박스 → 행잉 세트 적용");
+    return null;
+}
+
+// 포인트 텍스트: 박스로 리빌드 (트랜스폼 원값 복사 + 레이어 공간 앵커 정합)
+function qh_rebuildLayer(comp, orig, lines) {
+    var oProp = orig.property("Source Text");
+    var oDoc = oProp.value;
+    var warns = [];
+
+    function hasKeys(name) {
+        try { return orig.property(name).numKeys > 0; } catch (e) { return false; }
+    }
+    var is3D = false;
+    qh_try(function () { is3D = orig.threeDLayer === true; });
+    var trNames = ["Position", "Anchor Point", "Scale", "Rotation",
+                   "X Rotation", "Y Rotation", "Orientation", "Opacity"];
+    for (var ti = 0; ti < trNames.length; ti++) {
+        if (hasKeys(trNames[ti])) warns.push(trNames[ti] + " 키프레임 — 값만 복사");
+    }
+    try {
+        var fx = orig.property("ADBE Effect Parade");
+        if (fx && fx.numProperties > 0) warns.push("이펙트 " + fx.numProperties + "개 미이전");
+    } catch (e4) {}
+    try {
+        var anims = orig.property("ADBE Text Properties").property("ADBE Text Animators");
+        if (anims && anims.numProperties > 0) warns.push("애니메이터 " + anims.numProperties + "개 미이전");
+    } catch (e5) {}
+
+    var oBL = null;
+    try { oBL = oDoc.baselineLocs; } catch (eB) {}
+    var canAlign = (oBL !== null && oBL.length >= 4);
+    if (!canAlign) warns.push("baselineLocs 실패 — 정합 생략");
+    var oIdx0 = canAlign ? qh_firstValidLine(oBL, 0) : -1;
+    var oIdxBody = canAlign ? qh_firstValidLine(oBL, 1) : -1;
+    if (canAlign && oIdx0 < 0) { warns.push("유효 줄 없음 — 정합 생략"); canAlign = false; }
+
+    var origText = oDoc.text;
+    var quoteChar = (origText.length > 0) ? origText.charAt(0) : "";
+    var isQuote = (quoteChar !== "" && QH_QUOTE_CHARS.indexOf(quoteChar) !== -1);
+    var firstBody = null;
+    if (isQuote) {
+        var restT = origText.substring(1);
+        for (var fi = 0; fi < restT.length; fi++) {
+            var fc = restT.charAt(fi);
+            if (fc !== "\r" && fc !== "\n" && fc !== " ") { firstBody = fc; break; }
+        }
+        if (firstBody === null) isQuote = false;
+    }
+
+    var rect = null, fs = 50;
+    qh_try(function () { fs = oDoc.fontSize; });
+    qh_try(function () { rect = orig.sourceRectAtTime(comp.time, false); });
+    var boxW = rect ? Math.ceil(rect.width + fs * QH_BOX_MARGIN_X) : Math.ceil(fs * 20);
+    var boxH = rect ? Math.ceil(rect.height + fs * QH_BOX_MARGIN_Y) : Math.ceil(fs * 8);
+
+    var nl = comp.layers.addBoxText([boxW, boxH]);
+    nl.name = orig.name + " [BOX]";
+    nl.moveBefore(orig);
+
+    qh_try(function () { if (orig.parent !== null) nl.parent = orig.parent; });
+    if (is3D) qh_try(function () { nl.threeDLayer = true; });
+    function copyProp(name) {
+        return qh_try(function () { nl.property(name).setValue(orig.property(name).value); });
+    }
+    copyProp("Position");
+    copyProp("Anchor Point");
+    copyProp("Scale");
+    copyProp("Rotation");
+    if (is3D) { copyProp("X Rotation"); copyProp("Y Rotation"); copyProp("Orientation"); }
+    copyProp("Opacity");
+    qh_try(function () { nl.blendingMode = orig.blendingMode; });
+
+    var nProp = nl.property("Source Text");
+    var nDoc = nProp.value;
+    qh_try(function () { nDoc.font = oDoc.font; });
+    qh_try(function () { nDoc.fontSize = oDoc.fontSize; });
+    qh_try(function () { nDoc.applyFill = oDoc.applyFill; });
+    qh_try(function () { if (oDoc.applyFill) nDoc.fillColor = oDoc.fillColor; });
+    qh_try(function () { nDoc.applyStroke = oDoc.applyStroke; });
+    qh_try(function () {
+        if (oDoc.applyStroke) {
+            nDoc.strokeColor = oDoc.strokeColor;
+            nDoc.strokeWidth = oDoc.strokeWidth;
+            nDoc.strokeOverFill = oDoc.strokeOverFill;
+        }
+    });
+    qh_try(function () { nDoc.tracking = oDoc.tracking; });
+    qh_try(function () {
+        if (oDoc.autoLeading) { nDoc.autoLeading = true; }
+        else { nDoc.leading = oDoc.leading; }
+    });
+    qh_try(function () { nDoc.justification = oDoc.justification; });
+    qh_try(function () { nDoc.fauxBold = oDoc.fauxBold; });
+    qh_try(function () { nDoc.fauxItalic = oDoc.fauxItalic; });
+    qh_try(function () { nDoc.horizontalScale = oDoc.horizontalScale; });
+    qh_try(function () { nDoc.verticalScale = oDoc.verticalScale; });
+    qh_try(function () { nDoc.baselineShift = oDoc.baselineShift; });
+    qh_try(function () { nDoc.tsume = oDoc.tsume; });
+    nDoc.text = origText;
+    nDoc.hangingRoman = true;
+    if (QH_USE_AUTOFIT) {
+        qh_try(function () {
+            if (typeof BoxAutoFitPolicy !== "undefined") {
+                nDoc.boxAutoFitPolicy = BoxAutoFitPolicy.HEIGHT_PRECISE_BOUNDS;
+            }
+        });
+    }
+    nProp.setValue(nDoc);
+
+    var nDoc2 = nProp.value;
+    var nBL = null, btp = null;
+    qh_try(function () { nBL = nDoc2.baselineLocs; });
+    qh_try(function () { btp = nDoc2.boxTextPos; });
+
+    // 따옴표 폭: 엔진 보고값 우선, 실패 시 차분 측정 폴백
+    var qWidth = 0;
+    if (QH_ANCHOR_MODE === "FIRSTLINE" && isQuote) {
+        var nIdx0a = (nBL !== null) ? qh_firstValidLine(nBL, 0) : -1;
+        var gotEngine = false;
+        if (btp !== null && nIdx0a >= 0) {
+            var qEng = btp[0] - nBL[nIdx0a * 4];
+            if (qEng > 0.5) { qWidth = qEng; gotEngine = true; }
+        }
+        if (!gotEngine) {
+            try {
+                nDoc.text = quoteChar + firstBody;
+                nProp.setValue(nDoc);
+                var wA = nl.sourceRectAtTime(comp.time, false).width;
+                nDoc.text = firstBody;
+                nProp.setValue(nDoc);
+                var wB = nl.sourceRectAtTime(comp.time, false).width;
+                qWidth = (wA - wB) + QH_OPTICAL_OFFSET;
+                if (qWidth < 0) qWidth = 0;
+                nDoc.text = origText;
+                nProp.setValue(nDoc);
+                nDoc2 = nProp.value;
+                nBL = null; btp = null;
+                qh_try(function () { nBL = nDoc2.baselineLocs; });
+                qh_try(function () { btp = nDoc2.boxTextPos; });
+            } catch (eQ) {
+                warns.push("따옴표 폭 확보 실패 — 폭 0");
+                qWidth = 0;
+            }
+        }
+    }
+
+    // 정합: anchor_new = anchor(복사값) + (p_new − p_old)
+    var aligned = false;
+    if (canAlign && nBL !== null) {
+        try {
+            var oLines = Math.floor(oBL.length / 4);
+            var nLines = Math.floor(nBL.length / 4);
+            if (nLines !== oLines) warns.push("줄 수 변화(" + oLines + "→" + nLines + ")");
+            var nIdx0 = qh_firstValidLine(nBL, 0);
+            var pOld = null, pNew = null;
+
+            if (QH_ANCHOR_MODE === "FIRSTLINE") {
+                if (btp !== null && nIdx0 >= 0 && oIdx0 >= 0) {
+                    pOld = [oBL[oIdx0 * 4] + qWidth, oBL[oIdx0 * 4 + 1]];
+                    pNew = [btp[0], nBL[nIdx0 * 4 + 1]];
+                }
+            } else {
+                var oI = (oIdxBody >= 0) ? oIdxBody : oIdx0;
+                var nI = qh_firstValidLine(nBL, (oI <= nLines - 1) ? oI : 1);
+                if (oI >= 0 && nI >= 0) {
+                    pOld = [oBL[oI * 4], oBL[oI * 4 + 1]];
+                    pNew = [nBL[nI * 4], nBL[nI * 4 + 1]];
+                }
+            }
+
+            if (pOld !== null && pNew !== null) {
+                var ap = nl.property("Anchor Point");
+                var av = ap.value;
+                var nv = [];
+                for (var k = 0; k < av.length; k++) nv[k] = av[k];
+                nv[0] = nv[0] + (pNew[0] - pOld[0]);
+                nv[1] = nv[1] + (pNew[1] - pOld[1]);
+                ap.setValue(nv);
+                aligned = true;
+            } else {
+                warns.push("정합 기준점 실패 — 근사 배치");
+            }
+        } catch (eAl) {
+            warns.push("정합 실패: " + eAl.toString());
+        }
+    }
+
+    qh_try(function () { nl.startTime = orig.startTime; });
+    qh_try(function () { nl.inPoint = orig.inPoint; });
+    qh_try(function () { nl.outPoint = orig.outPoint; });
+    qh_try(function () { nl.label = orig.label; });
+    if (QH_REMOVE_ORIGINAL) {
+        var keepName = orig.name;
+        orig.remove();                 // undo 그룹 안이므로 Ctrl+Z 한 번으로 복원됨
+        nl.name = keepName;
+    }
+
+    qh_try(function () { if (nDoc2.boxOverflow === true) warns.push("박스 넘침 — 여유 상수 증가 요망"); });
+    lines.push("포인트 → 박스 변환" + (aligned ? "" : " (정합 생략)"));
+    for (var w = 0; w < warns.length; w++) lines.push("주의: " + warns[w]);
+    return nl;
+}
+
+function qh_routeLayer(comp, ly, lines) {
+    if (!(ly instanceof TextLayer)) {
+        lines.push("건너뜀: 텍스트 레이어 아님");
+        return { made: null, skipped: true };
+    }
+    var prop = ly.property("Source Text");
+    if (prop.numKeys > 0) {
+        lines.push("건너뜀: 소스텍스트 키프레임 (UI 수동 변환 권장)");
+        return { made: null, skipped: true };
+    }
+    var doc = prop.value;
+    if (doc.boxText) return { made: qh_applyBoxSet(ly, lines), skipped: false, boxSet: true };
+    return { made: qh_rebuildLayer(comp, ly, lines), skipped: false, boxSet: false };
+}
+
+// ── Quote Align 메인 (패널 버튼 진입점) ──────────────────────
+function applyQuoteHang() {
+    var comp = app.project ? app.project.activeItem : null;
+    if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
+    if (parseFloat(app.version) < 24.3) return err("AE 2024(24.3) 이상에서 동작합니다. 현재: " + app.version);
+
+    // 선택 스냅샷 (처리 중 선택 상태가 변하므로 필수)
+    var sel = [];
+    for (var si = 0; si < comp.selectedLayers.length; si++) sel.push(comp.selectedLayers[si]);
+    if (sel.length === 0) return err("처리할 레이어를 선택해 주세요.");
+
+    var rebuilt = 0, boxSet = 0, skipped = 0, errors = 0;
+    var created = [];
+    var issueLines = [];
+
+    app.beginUndoGroup("BANG Quote Align");
+    try {
+        for (var i = 0; i < sel.length; i++) {
+            var lines = [];
+            var lyName = sel[i].name;  // 원본이 삭제될 수 있으므로 미리 확보
+            try {
+                var r = qh_routeLayer(comp, sel[i], lines);
+                if (r.skipped) skipped++;
+                else if (r.boxSet) boxSet++;
+                else rebuilt++;
+                if (r.made !== null) created.push(r.made);
+            } catch (eL) {
+                errors++;
+                lines.push("오류: " + eL.toString());
+            }
+            // 경고·건너뜀·오류가 있는 레이어만 팝업에 표시 (최대 6줄)
+            for (var li = 0; li < lines.length; li++) {
+                if (issueLines.length < 6 &&
+                    (lines[li].indexOf("주의") === 0 ||
+                     lines[li].indexOf("건너뜀") === 0 ||
+                     lines[li].indexOf("오류") === 0)) {
+                    issueLines.push(lyName + " — " + lines[li]);
+                }
+            }
+        }
+    } catch (eMain) {
+        app.endUndoGroup();
+        return err(eMain.toString());
+    }
+    app.endUndoGroup();
+
+    // 생성된 [BOX] 레이어만 선택 상태로
+    qh_try(function () {
+        for (var di = 1; di <= comp.numLayers; di++) comp.layer(di).selected = false;
+        for (var ci = 0; ci < created.length; ci++) created[ci].selected = true;
+    });
+
+    // 완료 팝업 (undo 그룹 종료 후 — 크래시 완화)
+    if (rebuilt + boxSet > 0) {
+        var msg = QH_MSG_DONE;
+        if (issueLines.length > 0) msg += "\n\n" + issueLines.join("\n");
+        alert(msg);
+    }
+
+    return ok({ rebuilt: rebuilt, boxSet: boxSet, skipped: skipped, errors: errors });
 }

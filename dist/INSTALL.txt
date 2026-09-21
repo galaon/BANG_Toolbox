@@ -5,6 +5,7 @@
 ------------------------
   Windows
   After Effects CC 2022 (22.0) 이상 / or newer
+  (Quote Align 기능은 After Effects 2024 (24.3) 이상 필요 / requires AE 24.3+)
 
 
 설치 / Install
