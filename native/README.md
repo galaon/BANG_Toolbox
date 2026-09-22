@@ -34,8 +34,12 @@ native/
 
 ## 이펙트
 
-### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG)
-알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))로 획을 그린다. 파라미터(영문): `Position`(Outside/Center/Inside) · `Width` · `Offset` · `Color` · `Opacity` · `Softness` · `Body`(Keep/Hide) · `Order`(Stroke Behind/In Front).
+### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG · v1.2)
+알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))를 **한 번** 계산하고 그 거리장을 3겹의 획이 공유한다.
+- `Stroke 1/2/3` 그룹(같은 구성): `Enable`(SUPERVISE) · `Position`(Outside/Center/Inside) · `Width (px)` · `Offset (px)` · `Softness (px)` · `Opacity` · `Blend`(Normal/Multiply/Screen/Add) · `Fill`(Solid/Gradient, SUPERVISE) · `Color` · 하위 그룹 `Gradient`(`Color B` · `Gradient Type` Across Stroke/Linear/Radial · `Gradient Angle` · `Gradient Scale (px)` · `Reverse`).
+- `Edge Noise`: `Amount (px)` · `Scale (px)` · `Detail`(fBm 옥타브) · `Evolution`(각도 → 노이즈 3번째 축, 60° = 한 칸) · `Seed`. 거리장에 더하므로 모든 획이 같은 윤곽으로 흔들린다. 값 노이즈 fBm 은 ±1 을 못 채워 1.7배로 보정.
+- `Body`: `Body`(Keep/Hide) · `Body Opacity` · `Order`. 합성은 premultiplied 로 누적: behind 획들 → 본체 → front 획들(각 획의 front 여부 = Order 가 In Front 이거나 Position ≠ Outside). 블렌드 모드는 그 시점의 누적 색을 base 로 쓴다.
+- ECW: 꺼진 획 그룹과 Solid 일 때의 `Gradient` 하위 그룹을 `PF_UpdateParamUI` 로 회색(+접기) — `PF_OutFlag_SEND_UPDATE_PARAMS_UI` + `AEGP_RegisterWithAEGP` 필요.
 - SmartFX, 8/16/32bpc, 멀티프레임 렌더 OK. 출력 버퍼를 (오프셋+두께+부드러움+2) 만큼 확장(`PF_OutFlag_I_EXPAND_BUFFER`).
 - 거리장은 **출력 영역 + 여백 격자**에서 계산(AE 가 넘기는 입력 world 는 레이어 내용 경계로 잘려 있어 그 밖은 투명으로 채움).
 - 안쪽/중앙 획은 항상 본체 위에 합성(Layer Style 과 동일), '합성 순서'는 바깥 획에만 적용.

@@ -1,21 +1,28 @@
 // BANG_Stroke.cpp — BANG Stroke
 //  알파 경계까지의 부호 있는 거리(Euclidean Distance Transform)를 한 번 계산하고,
 //  |d - 중심| < 두께/2 인 픽셀에 획 색을 칠한다. 모서리는 자연스럽게 둥글고, 계산량은 이미지 크기에 비례.
-//  · 출력 버퍼를 (두께+오프셋+부드러움) 만큼 넓혀 레이어 경계 밖의 바깥 획도 잘리지 않음
+//  · 획을 최대 3겹까지 겹쳐 그린다 (각각 위치·두께·오프셋·부드러움·불투명도·블렌드·색/그라데이션)
+//  · 그라데이션: Across Stroke(획을 가로지르며) · Linear(각도) · Radial(내용 중심 기준)
+//  · Edge Noise: 거리장에 fBm 값 노이즈를 더해 가장자리를 거칠게 (Evolution 으로 애니메이션)
+//  · 출력 버퍼를 (오프셋+두께+부드러움+노이즈) 만큼 넓혀 레이어 경계 밖의 바깥 획도 잘리지 않음
 //  · 8 / 16 / 32bpc, SmartFX, 멀티프레임 렌더링 지원
-//  · AE 이펙트 버퍼는 straight alpha — 합성도 straight 로 수행
+//  · AE 이펙트 버퍼는 straight alpha — 합성은 premultiplied 로 누적한 뒤 마지막에 straight 로 되돌린다
 
 #include "BANG_Stroke.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
+#include <cstdint>
 #include <cstdio>
 #include <cstdarg>
 
 #ifdef AE_OS_WIN
 #include <windows.h>
 #endif
+
+static AEGP_PluginID g_plugin_id = 0;
+static bool          g_registered = false;
 
 // ── 디버그 로그 (BANG_FX_LOG 정의 시 %TEMP%\bang_stroke.log 에 기록) ──
 #ifdef BANG_FX_LOG
@@ -33,7 +40,7 @@ static void LOGF(const char* fmt, ...) {
 static PF_Err About(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     AEGP_SuiteHandler suites(in_data->pica_basicP);
-    suites.ANSICallbacksSuite1()->sprintf(out_data->return_msg, "BANG Stroke v%d.%d\rAlpha-edge distance stroke - BANG_Toolbox",
+    suites.ANSICallbacksSuite1()->sprintf(out_data->return_msg, "BANG Stroke v%d.%d\rAlpha-edge distance stroke (3 layers, gradient, noise) - BANG_Toolbox",
         BANG_STROKE_MAJOR, BANG_STROKE_MINOR);
     return PF_Err_NONE;
 }
@@ -41,9 +48,14 @@ static PF_Err About(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* param
 static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     out_data->my_version = PF_VERSION(BANG_STROKE_MAJOR, BANG_STROKE_MINOR, BANG_STROKE_BUG, BANG_STROKE_STAGE, BANG_STROKE_BUILD);
-    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER;
+    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
     out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER | PF_OutFlag2_FLOAT_COLOR_AWARE |
-                           PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_REVEALS_ZERO_ALPHA;
+                           PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_REVEALS_ZERO_ALPHA |
+                           PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG;   // 그룹 flags 존중 (Stroke 1 만 펼침)
+    if (!g_registered && in_data->appl_id != kAppID_Premiere) {
+        AEGP_SuiteHandler suites(in_data->pica_basicP);
+        if (suites.UtilitySuite3()->AEGP_RegisterWithAEGP(NULL, "BANG Stroke", &g_plugin_id) == A_Err_NONE) g_registered = true;
+    }
     return PF_Err_NONE;
 }
 
@@ -51,33 +63,109 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
 {
     PF_Err err = PF_Err_NONE;
     PF_ParamDef def;
+    #define LINE "\xE2\x94\x80\xE2\x94\x80\xE2\x94\x80\xE2\x94\x80\xE2\x94\x80\xE2\x94\x80"   // ──────
+    #define TOPIC(NAME, ID)        do { AEFX_CLR_STRUCT(def); PF_ADD_TOPIC(NAME, ID); } while (0)
+    #define TOPIC_CLOSED(NAME, ID) do { AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_START_COLLAPSED; PF_ADD_TOPIC(NAME, ID); } while (0)
+    #define TOPIC_END(ID)          do { AEFX_CLR_STRUCT(def); PF_END_TOPIC(ID); } while (0)
+    #define FSLIDER(NAME, VMIN, VMAX, SMIN, SMAX, DFLT, PREC, DISP, ID) do { AEFX_CLR_STRUCT(def); PF_ADD_FLOAT_SLIDERX(NAME, VMIN, VMAX, SMIN, SMAX, DFLT, PREC, DISP, 0, ID); } while (0)
 
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Position", 3, BS_POS_OUTSIDE, "Outside|Center|Inside", BS_DISK_POSITION);
+    // 획 3겹 — 같은 구성. 1번만 켜진 채 펼쳐지고 2·3번은 꺼진 채 접혀 있다.
+    static const char* const kNames[BS_NUM_STROKES] = { "Stroke 1 " LINE, "Stroke 2 " LINE, "Stroke 3 " LINE };
+    static const A_u_char kDefR[BS_NUM_STROKES] = { 255, 0, 255 }, kDefG[BS_NUM_STROKES] = { 255, 153, 255 }, kDefB[BS_NUM_STROKES] = { 255, 255, 255 };
+    static const PF_FpLong kDefWidth[BS_NUM_STROKES] = { 6, 12, 18 };
+    for (int i = 0; i < BS_NUM_STROKES; i++) {
+        const BS_ParamIdx& ix = BS_IDX[i];
+        if (i == 0) TOPIC(kNames[i], ix.group); else TOPIC_CLOSED(kNames[i], ix.group);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_CHECKBOXX("Enable", i == 0 ? TRUE : FALSE, PF_ParamFlag_SUPERVISE, ix.on);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_POPUP("Position", 3, BS_POS_OUTSIDE, "Outside|Center|Inside", ix.position);
+        FSLIDER("Width (px)", 0, 1000, 0, 60, kDefWidth[i], PF_Precision_TENTHS, 0, ix.width);
+        FSLIDER("Offset (px)", -500, 500, -20, 20, 0, PF_Precision_TENTHS, 0, ix.offset);
+        FSLIDER("Softness (px)", 0, 200, 0, 20, 0, PF_Precision_TENTHS, 0, ix.softness);
+        FSLIDER("Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, ix.opacity);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_POPUP("Blend", 4, BS_BLEND_NORMAL, "Normal|Multiply|Screen|Add", ix.blend);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_POPUPX("Fill", 2, BS_FILL_SOLID, "Solid|Gradient", PF_ParamFlag_SUPERVISE, ix.fill);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_COLOR("Color", kDefR[i], kDefG[i], kDefB[i], ix.color);
+        TOPIC_CLOSED("Gradient", ix.gradGroup);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_COLOR("Color B", 0, 153, 255, ix.colorB);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_POPUP("Gradient Type", 3, BS_GRAD_ACROSS, "Across Stroke|Linear|Radial", ix.gradType);
+        AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
+        PF_ADD_ANGLE("Gradient Angle", 0, ix.gradAngle);
+        FSLIDER("Gradient Scale (px)", 1, 10000, 1, 1000, 200, PF_Precision_TENTHS, 0, ix.gradScale);
+        AEFX_CLR_STRUCT(def);
+        PF_ADD_CHECKBOXX("Reverse", FALSE, 0, ix.gradRev);
+        TOPIC_END(ix.gradRev + 1);   // BS_Sx_GRAD_GROUP_E
+        TOPIC_END(ix.gradRev + 2);   // BS_Sx_GROUP_END
+    }
 
+    TOPIC_CLOSED("Edge Noise " LINE, BS_N_GROUP);
+    FSLIDER("Amount (px)", 0, 500, 0, 50, 0, PF_Precision_TENTHS, 0, BS_N_AMOUNT);
+    FSLIDER("Scale (px)", 1, 2000, 2, 200, 30, PF_Precision_TENTHS, 0, BS_N_SCALE);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Width", 0, 1000, 0, 60, 6, PF_Precision_TENTHS, 0, 0, BS_DISK_WIDTH);
+    PF_ADD_SLIDER("Detail", 1, 5, 1, 5, 2, BS_N_DETAIL);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
+    PF_ADD_ANGLE("Evolution", 0, BS_N_EVOLUTION);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_SLIDER("Seed", 0, 9999, 0, 100, 0, BS_N_SEED);
+    TOPIC_END(BS_N_GROUP_END);
 
+    TOPIC("Body " LINE, BS_B_GROUP);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Offset", -500, 500, -20, 20, 0, PF_Precision_TENTHS, 0, 0, BS_DISK_OFFSET);
-
+    PF_ADD_POPUP("Body", 2, BS_BODY_KEEP, "Keep|Hide (stroke only)", BS_BODY);
+    FSLIDER("Body Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BS_BODY_OPACITY);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_COLOR("Color", PF_MAX_CHAN8, PF_MAX_CHAN8, PF_MAX_CHAN8, BS_DISK_COLOR);
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, 0, BS_DISK_OPACITY);
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Softness", 0, 200, 0, 20, 0, PF_Precision_TENTHS, 0, 0, BS_DISK_SOFTNESS);
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Body", 2, BS_BODY_KEEP, "Keep|Hide (stroke only)", BS_DISK_BODY);
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Order", 2, BS_ORDER_BEHIND, "Stroke Behind|Stroke In Front", BS_DISK_ORDER);
+    PF_ADD_POPUP("Order", 2, BS_ORDER_BEHIND, "Stroke Behind|Stroke In Front", BS_ORDER);
+    TOPIC_END(BS_B_GROUP_END);
+    #undef FSLIDER
+    #undef TOPIC
+    #undef TOPIC_CLOSED
+    #undef TOPIC_END
+    #undef LINE
 
     out_data->num_params = BS_NUM_PARAMS;
     return err;
+}
+
+// ── ECW 상태: 꺼진 획 그룹과 쓰지 않는 그라데이션 항목을 회색으로 ──
+
+static PF_Err UpdateParamsUI(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[])
+{
+    if (!g_registered) return PF_Err_NONE;
+    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+    for (int i = 0; i < BS_NUM_STROKES; i++) {
+        const BS_ParamIdx& ix = BS_IDX[i];
+        const bool on = params[ix.on]->u.bd.value != 0;
+        const bool grad = on && params[ix.fill]->u.pd.value == BS_FILL_GRADIENT;
+        PF_ParamDef g = *params[ix.group];
+        g.param_type = PF_Param_GROUP_START;
+        if (on) g.ui_flags &= ~PF_PUI_DISABLED; else g.ui_flags |= PF_PUI_DISABLED;
+        ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, ix.group, &g));
+        PF_ParamDef gg = *params[ix.gradGroup];
+        gg.param_type = PF_Param_GROUP_START;
+        if (grad) { gg.ui_flags &= ~PF_PUI_DISABLED; gg.flags &= ~PF_ParamFlag_COLLAPSE_TWIRLY; }
+        else      { gg.ui_flags |=  PF_PUI_DISABLED; gg.flags |=  PF_ParamFlag_COLLAPSE_TWIRLY; }
+        ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, ix.gradGroup, &gg));
+    }
+    return err;
+}
+
+static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], const PF_UserChangedParamExtra* extra)
+{
+    for (int i = 0; i < BS_NUM_STROKES; i++) {
+        if (extra->param_index == BS_IDX[i].on || extra->param_index == BS_IDX[i].fill) {
+            PF_Err err = UpdateParamsUI(in_data, out_data, params);
+            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+            return err;
+        }
+    }
+    return PF_Err_NONE;
 }
 
 // ── 프리렌더: 파라미터 읽기, 여백 계산, 입력 체크아웃, 출력 영역 확장 ──
@@ -93,33 +181,55 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     memset(d, 0, sizeof(*d));
 
     #define CHK(idx) AEFX_CLR_STRUCT(pd); ERR(PF_CHECKOUT_PARAM(in_data, idx, in_data->current_time, in_data->time_step, in_data->time_scale, &pd));
-    CHK(BS_POSITION); d->position = pd.u.pd.value;
-    CHK(BS_WIDTH);    d->width    = pd.u.fs_d.value;
-    CHK(BS_OFFSET);   d->offset   = pd.u.fs_d.value;
-    CHK(BS_COLOR);    d->color    = pd.u.cd.value;
-    CHK(BS_OPACITY);  d->opacity  = pd.u.fs_d.value / 100.0;
-    CHK(BS_SOFTNESS); d->softness = pd.u.fs_d.value;
-    CHK(BS_BODY);     d->body     = pd.u.pd.value;
-    CHK(BS_ORDER);    d->order    = pd.u.pd.value;
-    #undef CHK
-
-    // 다운샘플(Draft/해상도) 보정: 파라미터는 풀해상도 px 기준
+    // 다운샘플(Draft/해상도) 보정: px 파라미터는 풀해상도 기준
     PF_FpLong dsx = (PF_FpLong)in_data->downsample_x.num / (PF_FpLong)in_data->downsample_x.den;
     PF_FpLong dsy = (PF_FpLong)in_data->downsample_y.num / (PF_FpLong)in_data->downsample_y.den;
     PF_FpLong ds = std::min(dsx, dsy);
     if (ds <= 0) ds = 1;
-    d->width    *= ds; d->offset *= ds; d->softness *= ds;
 
-    // 바깥으로 뻗는 최대 거리 = 오프셋 + 두께(위치에 따라) + 부드러움 + 여유
-    PF_FpLong reach = std::max(0.0, d->offset) + d->width + d->softness + 2.0;
-    if (d->position == BS_POS_INSIDE) reach = std::max(0.0, d->offset) + d->softness + 2.0;   // 안쪽 획은 밖으로 안 나감
-    d->margin = (A_long)std::ceil(reach);
-    LOGF("PreRender pos=%ld width=%.1f offset=%.1f soft=%.1f margin=%ld req=[%ld %ld %ld %ld] bitdepth=%d", d->position, d->width, d->offset, d->softness, d->margin, extra->input->output_request.rect.left, extra->input->output_request.rect.top, extra->input->output_request.rect.right, extra->input->output_request.rect.bottom, (int)extra->input->bitdepth);
+    PF_FpLong reach = 0;
+    for (int i = 0; i < BS_NUM_STROKES; i++) {
+        const BS_ParamIdx& ix = BS_IDX[i];
+        BS_StrokeData& s = d->strokes[i];
+        CHK(ix.on);        s.on        = pd.u.bd.value != 0;
+        CHK(ix.position);  s.position  = pd.u.pd.value;
+        CHK(ix.width);     s.width     = pd.u.fs_d.value * ds;
+        CHK(ix.offset);    s.offset    = pd.u.fs_d.value * ds;
+        CHK(ix.softness);  s.softness  = pd.u.fs_d.value * ds;
+        CHK(ix.opacity);   s.opacity   = pd.u.fs_d.value / 100.0;
+        CHK(ix.blend);     s.blend     = pd.u.pd.value;
+        CHK(ix.fill);      s.fill      = pd.u.pd.value;
+        CHK(ix.color);     s.colorA    = pd.u.cd.value;
+        CHK(ix.colorB);    s.colorB    = pd.u.cd.value;
+        CHK(ix.gradType);  s.gradType  = pd.u.pd.value;
+        CHK(ix.gradAngle); s.gradAngle = FIX_2_FLOAT(pd.u.ad.value);
+        CHK(ix.gradScale); s.gradScale = pd.u.fs_d.value * ds;
+        CHK(ix.gradRev);   s.gradRev   = pd.u.bd.value != 0;
+        if (s.on && s.opacity > 0) {
+            PF_FpLong outReach = std::max(0.0, s.offset) + s.softness + ((s.position == BS_POS_INSIDE) ? 0.0 : s.width);
+            reach = std::max(reach, outReach);
+        }
+    }
+    CHK(BS_BODY);          d->body        = pd.u.pd.value;
+    CHK(BS_BODY_OPACITY);  d->bodyOpacity = pd.u.fs_d.value / 100.0;
+    CHK(BS_ORDER);         d->order       = pd.u.pd.value;
+    CHK(BS_N_AMOUNT);      d->noiseAmount = pd.u.fs_d.value * ds;
+    CHK(BS_N_SCALE);       d->noiseScale  = std::max(1.0, pd.u.fs_d.value * ds);
+    CHK(BS_N_DETAIL);      d->noiseDetail = pd.u.sd.value;
+    CHK(BS_N_EVOLUTION);   d->noiseEvo    = FIX_2_FLOAT(pd.u.ad.value);
+    CHK(BS_N_SEED);        d->noiseSeed   = pd.u.sd.value;
+    #undef CHK
+    if (err) { delete d; return err; }
+
+    for (int i = 0; i < BS_NUM_STROKES; i++)
+        d->strokes[i].front = (d->order == BS_ORDER_FRONT) || (d->strokes[i].position != BS_POS_OUTSIDE);
+
+    d->margin = (A_long)std::ceil(reach + d->noiseAmount + 2.0);
+    LOGF("PreRender margin=%ld reach=%.1f noise=%.1f", d->margin, reach, d->noiseAmount);
 
     // 출력: 요청 영역을 그대로 만들되, 최대 영역은 입력 최대 영역 + 여백
     PF_RenderRequest req = extra->input->output_request;
     PF_CheckoutResult in_result;
-    // 입력은 출력 요청 영역 + 여백 (거리 계산에 이웃 알파가 필요)
     req.rect.left   -= d->margin; req.rect.top    -= d->margin;
     req.rect.right  += d->margin; req.rect.bottom += d->margin;
     req.preserve_rgb_of_zero_alpha = FALSE;
@@ -127,14 +237,11 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     ERR(extra->cb->checkout_layer(in_data->effect_ref, BS_INPUT, BS_INPUT, &req,
                                   in_data->current_time, in_data->time_step, in_data->time_scale, &in_result));
     if (!err) {
-        d->in_rect = in_result.result_rect;    // 실제로 받게 될 입력 영역 (레이어 경계로 잘린 결과)
-        LOGF("  in_result=[%ld %ld %ld %ld] max=[%ld %ld %ld %ld]", in_result.result_rect.left, in_result.result_rect.top, in_result.result_rect.right, in_result.result_rect.bottom, in_result.max_result_rect.left, in_result.max_result_rect.top, in_result.max_result_rect.right, in_result.max_result_rect.bottom);
-
+        d->in_rect = in_result.result_rect;
         PF_LRect maxr = in_result.max_result_rect;
         maxr.left -= d->margin; maxr.top -= d->margin; maxr.right += d->margin; maxr.bottom += d->margin;
         extra->output->max_result_rect = maxr;
 
-        // result = 요청 ∩ 최대
         PF_LRect r = extra->input->output_request.rect;
         r.left = std::max(r.left, maxr.left);   r.top = std::max(r.top, maxr.top);
         r.right = std::min(r.right, maxr.right); r.bottom = std::min(r.bottom, maxr.bottom);
@@ -191,6 +298,37 @@ static void edt2d(std::vector<float>& g, int w, int h)
     }
 }
 
+// ── 값 노이즈 (fBm) — 가장자리 거칠게 ──
+static float HashNoise(int x, int y, int z, uint32_t seed)
+{
+    uint32_t h = (uint32_t)x * 0x9E3779B1u ^ (uint32_t)y * 0x85EBCA77u ^ (uint32_t)z * 0xC2B2AE3Du ^ (seed + 1u) * 0x27D4EB2Fu;
+    h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12; h *= 0x297A2D39u; h ^= h >> 15;
+    return (float)(h & 0xFFFFFFu) / 8388607.5f - 1.0f;   // [-1, 1]
+}
+static float Smooth(float t) { return t * t * (3.f - 2.f * t); }
+static float ValueNoise2(float x, float y, int z, uint32_t seed)
+{
+    int xi = (int)std::floor(x), yi = (int)std::floor(y);
+    float tx = Smooth(x - xi), ty = Smooth(y - yi);
+    float n00 = HashNoise(xi, yi, z, seed), n10 = HashNoise(xi + 1, yi, z, seed);
+    float n01 = HashNoise(xi, yi + 1, z, seed), n11 = HashNoise(xi + 1, yi + 1, z, seed);
+    return (n00 * (1 - tx) + n10 * tx) * (1 - ty) + (n01 * (1 - tx) + n11 * tx) * ty;
+}
+// Evolution(회전각)을 3번째 축으로 써서 부드럽게 흐르게 한다 (60° = 노이즈 한 칸)
+static float FbmNoise(float x, float y, float evo, int octaves, uint32_t seed)
+{
+    float zf = evo / 60.0f;
+    int z0 = (int)std::floor(zf); float tz = Smooth(zf - z0);
+    float sum = 0, amp = 1, norm = 0, fx = x, fy = y;
+    for (int o = 0; o < octaves; o++) {
+        float a = ValueNoise2(fx, fy, z0 + o * 31, seed), b = ValueNoise2(fx, fy, z0 + 1 + o * 31, seed);
+        sum += (a * (1 - tz) + b * tz) * amp;
+        norm += amp; amp *= 0.5f; fx *= 2.03f; fy *= 2.01f;
+    }
+    // 값 노이즈 fBm 은 ±1 을 거의 못 채우므로 약간 키워 Amount(px) 와 체감을 맞춘다
+    return (norm > 0) ? std::min(std::max(sum / norm * 1.7f, -1.5f), 1.5f) : 0.f;
+}
+
 // ── 픽셀 타입별 접근 ─────────────────────────────────────────
 template <typename P> struct Chan;
 template <> struct Chan<PF_Pixel>      { static float get(A_u_char v)  { return v / 255.0f; }   static A_u_char  put(float f) { return (A_u_char)(std::min(std::max(f, 0.f), 1.f) * 255.0f + 0.5f); } };
@@ -245,6 +383,25 @@ static void BuildSDF(StrokeCtx& c)
     }
 }
 
+// 획 하나의 렌더 상수 (픽셀 루프 밖에서 준비)
+struct StrokeRT {
+    const BS_StrokeData* s;
+    float half, center, soft, op;
+    float ar, ag, ab, br, bg, bb;      // 색 A / B
+    float gcos, gsin, gscale;          // Linear 그라데이션 방향·크기
+    float cx, cy;                      // 그라데이션 기준 중심 (레이어 좌표)
+};
+
+static inline void BlendRGB(A_long mode, float br_, float bg_, float bb_, float& r, float& g, float& b)
+{
+    switch (mode) {
+        case BS_BLEND_MULTIPLY: r *= br_; g *= bg_; b *= bb_; break;
+        case BS_BLEND_SCREEN:   r = 1 - (1 - r) * (1 - br_); g = 1 - (1 - g) * (1 - bg_); b = 1 - (1 - b) * (1 - bb_); break;
+        case BS_BLEND_ADD:      r = std::min(1.f, r + br_); g = std::min(1.f, g + bg_); b = std::min(1.f, b + bb_); break;
+        default: break;   // Normal
+    }
+}
+
 template <typename P>
 static PF_Err RenderStroke(StrokeCtx& c)
 {
@@ -255,54 +412,89 @@ static PF_Err RenderStroke(StrokeCtx& c)
     const int offy = c.out_rect.top  - d->in_rect.top;
     const int gox = c.out_rect.left - c.gx0, goy = c.out_rect.top - c.gy0;   // 출력 (0,0) → 격자 좌표
 
-    const float half = (float)(d->width * 0.5);
-    float center;   // 획 중심의 거리값
-    switch (d->position) {
-        case BS_POS_INSIDE: center = -(float)(d->offset) - half; break;
-        case BS_POS_CENTER: center = (float)d->offset; break;
-        default:            center = (float)d->offset + half; break;
+    // 내용 중심 (그라데이션 기준)
+    const float ccx = (float)(d->in_rect.left + d->in_rect.right) * 0.5f;
+    const float ccy = (float)(d->in_rect.top + d->in_rect.bottom) * 0.5f;
+
+    StrokeRT rt[BS_NUM_STROKES];
+    int nBehind = 0, nFront = 0;
+    const StrokeRT* behind[BS_NUM_STROKES]; const StrokeRT* front[BS_NUM_STROKES];
+    for (int i = 0; i < BS_NUM_STROKES; i++) {
+        const BS_StrokeData& s = d->strokes[i];
+        StrokeRT& t = rt[i];
+        t.s = &s;
+        t.half = (float)(s.width * 0.5);
+        switch (s.position) {
+            case BS_POS_INSIDE: t.center = -(float)s.offset - t.half; break;
+            case BS_POS_CENTER: t.center = (float)s.offset; break;
+            default:            t.center = (float)s.offset + t.half; break;
+        }
+        t.soft = (float)s.softness;
+        t.op = (float)s.opacity;
+        t.ar = Chan<PF_Pixel>::get(s.colorA.red); t.ag = Chan<PF_Pixel>::get(s.colorA.green); t.ab = Chan<PF_Pixel>::get(s.colorA.blue);
+        t.br = Chan<PF_Pixel>::get(s.colorB.red); t.bg = Chan<PF_Pixel>::get(s.colorB.green); t.bb = Chan<PF_Pixel>::get(s.colorB.blue);
+        const float a = (float)(s.gradAngle * 3.14159265358979 / 180.0);
+        t.gcos = std::cos(a); t.gsin = std::sin(a);
+        t.gscale = (float)std::max(1.0, s.gradScale);
+        t.cx = ccx; t.cy = ccy;
+        if (!s.on || s.opacity <= 0 || (s.width <= 0 && s.softness <= 0)) continue;
+        if (s.front) front[nFront++] = &t; else behind[nBehind++] = &t;
     }
-    const float soft = (float)d->softness;
-    const float sr = Chan<PF_Pixel>::get(d->color.red), sg = Chan<PF_Pixel>::get(d->color.green), sb = Chan<PF_Pixel>::get(d->color.blue);
-    const float op = (float)d->opacity;
+
     const bool hideBody = (d->body == BS_BODY_HIDE);
-    // 안쪽·중앙 획은 본체 위에 그려야 보인다(Layer Style 과 동일). '합성 순서'는 바깥 획에만 의미가 있음
-    const bool strokeFront = (d->order == BS_ORDER_FRONT) || (d->position != BS_POS_OUTSIDE);
+    const float bodyOp = (float)d->bodyOpacity;
+    const float noiseAmt = (float)d->noiseAmount, noiseScale = (float)d->noiseScale, noiseEvo = (float)d->noiseEvo;
+    const int noiseOct = std::min(std::max((int)d->noiseDetail, 1), 5);
+    const uint32_t noiseSeed = (uint32_t)d->noiseSeed;
+
+    // 픽셀 하나에 획 하나를 premultiplied 로 얹는다
+    auto put = [&](const StrokeRT& t, float dist, float lx, float ly, float& oa, float& orr, float& og, float& ob) {
+        float tt = t.half - std::fabs(dist - t.center);
+        float cov = (tt + 0.5f + t.soft * 0.5f) / (1.0f + t.soft);
+        cov = std::min(std::max(cov, 0.f), 1.f);
+        float sa = cov * t.op;
+        if (sa <= 0.f) return;
+        float r = t.ar, g = t.ag, b = t.ab;
+        if (t.s->fill == BS_FILL_GRADIENT) {
+            float u;
+            if (t.s->gradType == BS_GRAD_LINEAR)      u = 0.5f + ((lx - t.cx) * t.gcos + (ly - t.cy) * t.gsin) / t.gscale;
+            else if (t.s->gradType == BS_GRAD_RADIAL) u = std::sqrt((lx - t.cx) * (lx - t.cx) + (ly - t.cy) * (ly - t.cy)) / t.gscale;
+            else                                      u = (t.half > 0) ? (dist - (t.center - t.half)) / (2.f * t.half) : 0.f;   // Across Stroke
+            u = std::min(std::max(u, 0.f), 1.f);
+            if (t.s->gradRev) u = 1.f - u;
+            r = t.ar + (t.br - t.ar) * u; g = t.ag + (t.bg - t.ag) * u; b = t.ab + (t.bb - t.ab) * u;
+        }
+        if (t.s->blend != BS_BLEND_NORMAL && oa > 0.f) BlendRGB(t.s->blend, orr / oa, og / oa, ob / oa, r, g, b);
+        const float k = 1.f - sa;
+        oa = sa + oa * k; orr = r * sa + orr * k; og = g * sa + og * k; ob = b * sa + ob * k;
+    };
 
     for (int y = 0; y < oh; y++) {
         P* orow = (P*)((char*)c.out->data + y * c.out->rowbytes);
         int iy = y + offy;
         const P* irow = (iy >= 0 && iy < ih) ? (const P*)((const char*)c.in->data + iy * c.in->rowbytes) : nullptr;
         const float* srow = &c.sdf[(size_t)(y + goy) * c.gw + gox];
+        const float ly = (float)(c.out_rect.top + y) + 0.5f;
         for (int x = 0; x < ow; x++) {
             int ix = x + offx;
-            float ba = 0, br = 0, bg = 0, bb = 0;
+            float ba = 0, br_ = 0, bg_ = 0, bb_ = 0;                     // 본체 (straight)
             if (irow && ix >= 0 && ix < iw) {
                 const P& p = irow[ix];
-                ba = Chan<P>::get(p.alpha); br = Chan<P>::get(p.red); bg = Chan<P>::get(p.green); bb = Chan<P>::get(p.blue);
+                ba = Chan<P>::get(p.alpha); br_ = Chan<P>::get(p.red); bg_ = Chan<P>::get(p.green); bb_ = Chan<P>::get(p.blue);
             }
+            if (hideBody) ba = 0; else ba *= bodyOp;
+            const float lx = (float)(c.out_rect.left + x) + 0.5f;
             float dist = srow[x];
-            if (hideBody) ba = 0;
-            // 획 커버리지: t = half - |dist - center| (px). 0.5px AA + 부드러움
-            float t = half - std::fabs(dist - center);
-            float cov = (t + 0.5f + soft * 0.5f) / (1.0f + soft);
-            cov = std::min(std::max(cov, 0.f), 1.f);
-            float sa = cov * op;
+            if (noiseAmt > 0.f) dist += FbmNoise(lx / noiseScale, ly / noiseScale, noiseEvo, noiseOct, noiseSeed) * noiseAmt;
 
-            float oa, orr, og, ob;
-            if (sa <= 0.f) { oa = ba; orr = br; og = bg; ob = bb; }
-            else if (strokeFront) {
-                oa = sa + ba * (1 - sa);
-                float wS = sa, wB = ba * (1 - sa);
-                orr = (sr * wS + br * wB) / oa; og = (sg * wS + bg * wB) / oa; ob = (sb * wS + bb * wB) / oa;
-            } else {
-                oa = ba + sa * (1 - ba);
-                float wB = ba, wS = sa * (1 - ba);
-                if (oa > 0) { orr = (br * wB + sr * wS) / oa; og = (bg * wB + sg * wS) / oa; ob = (bb * wB + sb * wS) / oa; }
-                else { orr = og = ob = 0; }
-            }
+            float oa = 0, orr = 0, og = 0, ob = 0;                       // 누적 (premultiplied)
+            for (int i = 0; i < nBehind; i++) put(*behind[i], dist, lx, ly, oa, orr, og, ob);
+            if (ba > 0.f) { const float k = 1.f - ba; oa = ba + oa * k; orr = br_ * ba + orr * k; og = bg_ * ba + og * k; ob = bb_ * ba + ob * k; }
+            for (int i = 0; i < nFront; i++) put(*front[i], dist, lx, ly, oa, orr, og, ob);
+
             P& o = orow[x];
-            o.alpha = Chan<P>::put(oa); o.red = Chan<P>::put(orr); o.green = Chan<P>::put(og); o.blue = Chan<P>::put(ob);
+            const float inv = (oa > 1e-6f) ? 1.f / oa : 0.f;
+            o.alpha = Chan<P>::put(oa); o.red = Chan<P>::put(orr * inv); o.green = Chan<P>::put(og * inv); o.blue = Chan<P>::put(ob * inv);
         }
     }
     return PF_Err_NONE;
@@ -364,11 +556,13 @@ PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutData* out_data, PF_Param
     PF_Err err = PF_Err_NONE;
     try {
         switch (cmd) {
-            case PF_Cmd_ABOUT:            err = About(in_data, out_data, params, output); break;
-            case PF_Cmd_GLOBAL_SETUP:     err = GlobalSetup(in_data, out_data, params, output); break;
-            case PF_Cmd_PARAMS_SETUP:     err = ParamsSetup(in_data, out_data, params, output); break;
-            case PF_Cmd_SMART_PRE_RENDER: err = PreRender(in_data, out_data, (PF_PreRenderExtra*)extra); break;
-            case PF_Cmd_SMART_RENDER:     err = SmartRender(in_data, out_data, (PF_SmartRenderExtra*)extra); break;
+            case PF_Cmd_ABOUT:              err = About(in_data, out_data, params, output); break;
+            case PF_Cmd_GLOBAL_SETUP:       err = GlobalSetup(in_data, out_data, params, output); break;
+            case PF_Cmd_PARAMS_SETUP:       err = ParamsSetup(in_data, out_data, params, output); break;
+            case PF_Cmd_UPDATE_PARAMS_UI:   err = UpdateParamsUI(in_data, out_data, params); break;
+            case PF_Cmd_USER_CHANGED_PARAM: err = UserChangedParam(in_data, out_data, params, (const PF_UserChangedParamExtra*)extra); break;
+            case PF_Cmd_SMART_PRE_RENDER:   err = PreRender(in_data, out_data, (PF_PreRenderExtra*)extra); break;
+            case PF_Cmd_SMART_RENDER:       err = SmartRender(in_data, out_data, (PF_SmartRenderExtra*)extra); break;
             default: break;
         }
     } catch (PF_Err& thrown) { err = thrown; LOGF("EXC cmd=%d err=%d", (int)cmd, (int)err); }

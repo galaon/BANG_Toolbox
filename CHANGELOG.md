@@ -3,6 +3,17 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.7] — 2026-09-23
+
+### Added (BANG Stroke v1.2 — 기능 확장)
+- **획 3겹** — `Stroke 1/2/3` 그룹. 각각 `Enable`·`Position`(Outside/Center/Inside)·`Width`·`Offset`·`Softness`·`Opacity`·`Blend`(Normal/Multiply/Screen/Add)·`Fill`. 꺼진 그룹은 접힌 채 회색.
+- **그라데이션 채우기** — `Fill = Gradient` 시 `Color B`·`Gradient Type`(**Across Stroke** 획을 가로지르며 / **Linear** 각도 / **Radial** 내용 중심)·`Gradient Angle`·`Gradient Scale (px)`·`Reverse`.
+- **Edge Noise** — 거리장에 fBm 값 노이즈를 더해 가장자리를 거칠게: `Amount (px)`·`Scale (px)`·`Detail`(옥타브 1~5)·`Evolution`(각도, 키프레임으로 흐름)·`Seed`. 모든 획이 같은 윤곽으로 함께 흔들린다.
+- **Body Opacity** — 본체만 반투명하게(획은 그대로). 기존 `Body`(Keep/Hide)·`Order` 는 유지.
+
+### Changed
+- 기존 단일 획 파라미터는 `Stroke 1` 그룹으로 이동 — v1.1 로 만든 이펙트 인스턴스는 **다시 적용**해야 합니다.
+
 ## [1.3.6] — 2026-09-22
 
 ### Added
