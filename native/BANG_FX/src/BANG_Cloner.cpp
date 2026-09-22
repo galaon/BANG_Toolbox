@@ -3,8 +3,10 @@
 //  · 레이어 복제가 없으므로 개수와 무관하게 소스 애니메이션 타이밍이 정확히 유지된다 (Motion Tile 모델)
 //  · 출력 버퍼를 모든 클론의 경계 합집합으로 확장 (PF_OutFlag_I_EXPAND_BUFFER)
 //  · 배치: Linear / Grid / Radial. 간격은 "이웃 클론 경계 사이 px(Gap)" — 소스 크기와 무관하게 조절, 음수 = 겹침
-//  · 원본 위치 기준: Linear 는 Origin Index(몇 번째가 원본인지), Grid 는 Grid Origin(9방향 칸), Radial 은 Center
-//  · 단계 변환(회전·크기·불투명도) + 랜덤(위치·회전·크기, 시드). 배치 모드에 맞지 않는 항목은 숨김 (AEGP DynamicStream HIDDEN)
+//  · 원본 위치 기준: Linear 는 Origin Index(몇 번째가 원본인지), Grid 는 Origin X/Y(원본이 놓이는 칸), Radial 은 Center
+//  · 단계 변환(회전·크기·불투명도) + 랜덤(위치·회전·크기, 시드). 파라미터는 그룹(Linear/Grid/Radial/Step/Random)으로 묶고
+//    배치 모드에 맞는 그룹만 펼치고 나머지는 접음(PF_UpdateParamUI). Grid 에선 Count 숨김 (AEGP DynamicStream HIDDEN)
+//  · 퀵 버튼(커스텀 ECW UI, Drawbot): Start Angle·Sweep·Rotation Step 각도 프리셋, Grid Origin 9방향 — 클릭 한 번으로 값 설정
 //  · 8 / 16 / 32bpc, SmartFX, 멀티프레임 렌더링
 //  · 렌더: 입력을 premultiplied float 로 한 번 변환 → 클론마다 (정수 이동이면 직접 복사, 아니면 증분 바이리니어) over 합성.
 //    클론별 행 범위를 스레드로 분할.
@@ -39,9 +41,10 @@ static PF_Err About(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* param
 static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     out_data->my_version = PF_VERSION(BANG_CLONER_MAJOR, BANG_CLONER_MINOR, BANG_CLONER_BUG, BANG_CLONER_STAGE, BANG_CLONER_BUILD);
-    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER | PF_OutFlag_SEND_UPDATE_PARAMS_UI | PF_OutFlag_CUSTOM_UI;
     out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER | PF_OutFlag2_FLOAT_COLOR_AWARE |
-                           PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_REVEALS_ZERO_ALPHA;
+                           PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_REVEALS_ZERO_ALPHA |
+                           PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG;   // 그룹 flags=0 → 기본 펼침
     if (!g_registered && in_data->appl_id != kAppID_Premiere) {
         AEGP_SuiteHandler suites(in_data->pica_basicP);
         if (suites.UtilitySuite3()->AEGP_RegisterWithAEGP(NULL, "BANG Cloner", &g_plugin_id) == A_Err_NONE) g_registered = true;
@@ -49,17 +52,41 @@ static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     return PF_Err_NONE;
 }
 
+// ── 퀵 버튼 정의 (커스텀 ECW UI) ──
+// kind: 0 = 각도(대상 1개, deg) · 1 = float 슬라이더(대상 1개) · 2 = Origin 3×3 (대상 X/Y 두 개)
+struct QuickRow { int param; int kind; int target; int target2; int n; const float* values; const char* const* labels; int cols; };
+static const float  kAngleVals[]   = { 0, 15, 30, 45, 60, 90, 120, 180 };
+static const char* const kAngleLbls[] = { "0", "15", "30", "45", "60", "90", "120", "180" };
+static const float  kSweepVals[]   = { 45, 90, 180, 270, 360 };
+static const char* const kSweepLbls[] = { "45", "90", "180", "270", "360" };
+static const float  kOriginVals[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };   // 3×3 인덱스: 열 = i%3, 행 = i/3 (0 first · 1 center · 2 last)
+static const char* const kOriginLbls[] = { "\xE2\x86\x96", "\xE2\x86\x91", "\xE2\x86\x97", "\xE2\x86\x90", "\xE2\x97\x8F", "\xE2\x86\x92", "\xE2\x86\x99", "\xE2\x86\x93", "\xE2\x86\x98" };
+static const QuickRow kQuick[] = {
+    { BC_ORIGIN_QUICK, 2, BC_ORIGIN_X,     BC_ORIGIN_Y, 9, kOriginVals, kOriginLbls, 9 },
+    { BC_START_QUICK,  0, BC_START_ANGLE,  -1,          8, kAngleVals,  kAngleLbls,  8 },
+    { BC_SWEEP_QUICK,  1, BC_SWEEP,        -1,          5, kSweepVals,  kSweepLbls,  5 },
+    { BC_ROT_QUICK,    0, BC_ROT_STEP,     -1,          8, kAngleVals,  kAngleLbls,  8 },
+};
+static const QuickRow* FindQuick(int param) { for (const QuickRow& q : kQuick) if (q.param == param) return &q; return nullptr; }
+static const int kQuickBtnH = 18, kQuickBtnGap = 3, kQuickBtnW = 30;
+
 static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     PF_Err err = PF_Err_NONE;
     PF_ParamDef def;
 
+    // 퀵 버튼 행: 데이터 없는 파라미터 + 커스텀 컨트롤(PF_PUI_CONTROL) — 그리기/클릭은 PF_Cmd_EVENT
+    // (PF_Param_NO_DATA 는 숨긴 그룹에서도 행이 남아 체크박스 데이터형 + 커스텀 컨트롤로 만든다. 값은 쓰지 않음, 키프레임 불가)
+    #define QUICK_ROW(NAME, ID) do { AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_CANNOT_TIME_VARY; def.ui_flags = PF_PUI_CONTROL; def.ui_width = 300; def.ui_height = kQuickBtnH + 2; PF_ADD_CHECKBOX(NAME, "", FALSE, 0, ID); } while (0)
+    #define TOPIC(NAME, ID)  do { AEFX_CLR_STRUCT(def); PF_ADD_TOPIC(NAME, ID); } while (0)
+    #define TOPIC_END(ID)    do { AEFX_CLR_STRUCT(def); PF_END_TOPIC(ID); } while (0)
+
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUPX("Layout", 3, BC_MODE_LINEAR, "Linear|Grid|Radial", PF_ParamFlag_SUPERVISE, BC_MODE);
-
-    // Linear
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Count", 1, 1000, 1, 50, 5, BC_COUNT);
+
+    TOPIC("Linear", BC_G_LINEAR);
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Origin Index", 1, 1000, 1, 50, 1, BC_ORIGIN);
     AEFX_CLR_STRUCT(def);
@@ -68,50 +95,205 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_FLOAT_SLIDERX("Gap", -10000, 10000, -200, 200, 20, PF_Precision_TENTHS, 0, 0, BC_GAP);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Offset", -10000, 10000, -500, 500, 0, PF_Precision_TENTHS, 0, 0, BC_OFFSET);
+    TOPIC_END(BC_G_LINEAR_END);
 
-    // Grid
-    AEFX_CLR_STRUCT(def);
+    TOPIC("Grid", BC_G_GRID);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
     PF_ADD_SLIDER("Columns", 1, 100, 1, 20, 3, BC_COLS);
-    AEFX_CLR_STRUCT(def);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
     PF_ADD_SLIDER("Rows", 1, 100, 1, 20, 3, BC_ROWS);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Gap X", -10000, 10000, -200, 200, 20, PF_Precision_TENTHS, 0, 0, BC_GAP_X);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Gap Y", -10000, 10000, -200, 200, 20, PF_Precision_TENTHS, 0, 0, BC_GAP_Y);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Grid Origin", 9, 5, "Top Left|Top|Top Right|Left|Center|Right|Bottom Left|Bottom|Bottom Right", BC_GRID_ORIGIN);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
+    PF_ADD_SLIDER("Origin X", 1, 100, 1, 20, 2, BC_ORIGIN_X);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
+    PF_ADD_SLIDER("Origin Y", 1, 100, 1, 20, 2, BC_ORIGIN_Y);
+    QUICK_ROW("Origin Preset", BC_ORIGIN_QUICK);
+    TOPIC_END(BC_G_GRID_END);
 
-    // Radial
+    TOPIC("Radial", BC_G_RADIAL);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Radius", -10000, 10000, 0, 1000, 200, PF_Precision_TENTHS, 0, 0, BC_RADIUS);
-    AEFX_CLR_STRUCT(def);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;   // 다이얼 접힘 (숨긴 그룹의 다이얼이 ECW 에 남는 현상 방지)
     PF_ADD_ANGLE("Start Angle", 0, BC_START_ANGLE);
+    QUICK_ROW("Preset", BC_START_QUICK);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Sweep", -3600, 3600, 0, 360, 360, PF_Precision_TENTHS, 0, 0, BC_SWEEP);
+    QUICK_ROW("Preset", BC_SWEEP_QUICK);
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOXX("Face Outward", FALSE, 0, BC_FACE_OUT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POINT("Center", 50, 50, 0, BC_CENTER);
+    TOPIC_END(BC_G_RADIAL_END);
 
-    // Steps / random
-    AEFX_CLR_STRUCT(def);
+    TOPIC("Step", BC_G_STEP);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
     PF_ADD_ANGLE("Rotation Step", 0, BC_ROT_STEP);
+    QUICK_ROW("Preset", BC_ROT_QUICK);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Scale Step", -1000, 1000, -50, 50, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, BC_SCALE_STEP);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("End Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, 0, BC_OPACITY_END);
+    TOPIC_END(BC_G_STEP_END);
+
+    TOPIC("Random", BC_G_RANDOM);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_SLIDER("Seed", 0, 9999, 0, 100, 0, BC_SEED);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Random Position", 0, 10000, 0, 500, 0, PF_Precision_TENTHS, 0, 0, BC_RAND_POS);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Random Rotation", 0, 180, 0, 180, 0, PF_Precision_TENTHS, 0, 0, BC_RAND_ROT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Random Scale", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, BC_RAND_SCALE);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_SLIDER("Seed", 0, 9999, 0, 100, 0, BC_SEED);
+    TOPIC_END(BC_G_RANDOM_END);
+    #undef QUICK_ROW
+    #undef TOPIC
+    #undef TOPIC_END
+
+    // 커스텀 UI(ECW 이벤트) 등록
+    PF_CustomUIInfo ci;
+    AEFX_CLR_STRUCT(ci);
+    ci.events = PF_CustomEFlag_EFFECT;
+    ci.comp_ui_alignment = ci.layer_ui_alignment = ci.preview_ui_alignment = PF_UIAlignment_NONE;
+    err = (*(in_data->inter.register_ui))(in_data->effect_ref, &ci);
 
     out_data->num_params = BC_NUM_PARAMS;
     return err;
 }
+
+// ── 커스텀 UI: 퀵 버튼 그리기 / 클릭 ──
+
+struct BtnRect { float x, y, w, h; };
+static BtnRect QuickBtnRect(const QuickRow& q, const PF_UnionableRect& frame, int i)
+{
+    const int cols = q.cols, rows = (q.n + cols - 1) / cols;
+    (void)rows;
+    float frameW = (float)(frame.right - frame.left);
+    float w = (float)kQuickBtnW;
+    if (frameW > 0) w = std::max(14.f, std::min(40.f, (frameW - (cols - 1) * kQuickBtnGap) / cols));
+    BtnRect r;
+    r.x = frame.left + (i % cols) * (w + kQuickBtnGap);
+    r.y = frame.top + 1 + (i / cols) * (kQuickBtnH + kQuickBtnGap);
+    r.w = w; r.h = (float)kQuickBtnH;
+    return r;
+}
+
+// 버튼 i 가 현재 값과 같은지 (강조 표시용)
+static bool QuickIsActive(const QuickRow& q, PF_ParamDef* params[], int i)
+{
+    if (q.kind == 0) return std::fabs(FIX_2_FLOAT(params[q.target]->u.ad.value) - q.values[i]) < 1e-3;
+    if (q.kind == 1) return std::fabs(params[q.target]->u.fs_d.value - q.values[i]) < 1e-3;
+    // Origin 3×3: 현재 Origin X/Y 가 어느 칸인지
+    A_long cols = params[BC_COLS]->u.sd.value, rows = params[BC_ROWS]->u.sd.value;
+    A_long ox = params[BC_ORIGIN_X]->u.sd.value, oy = params[BC_ORIGIN_Y]->u.sd.value;
+    auto slot = [](A_long v, A_long n) { if (v <= 1) return 0; if (v >= n) return 2; return (v == (n + 1) / 2) ? 1 : -1; };
+    int sx = slot(ox, cols), sy = slot(oy, rows);
+    return sx >= 0 && sy >= 0 && (i % 3) == sx && (i / 3) == sy;
+}
+
+static void ToUTF16(const char* utf8, DRAWBOT_UTF16Char* out, int cap)
+{
+#ifdef AE_OS_WIN
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, (wchar_t*)out, cap);
+    if (n <= 0) out[0] = 0;
+#else
+    int k = 0; for (; utf8[k] && k < cap - 1; k++) out[k] = (DRAWBOT_UTF16Char)(unsigned char)utf8[k]; out[k] = 0;
+#endif
+}
+
+static PF_Err QuickDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_EventExtra* ev, const QuickRow& q)
+{
+    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    if (ev->effect_win.area != PF_EA_CONTROL) return err;
+    DRAWBOT_Suites db;
+    ERR(AEFX_AcquireDrawbotSuites(in_data, out_data, &db));
+    if (err) return err;
+    DRAWBOT_DrawRef drawRef = NULL; DRAWBOT_SupplierRef sup = NULL; DRAWBOT_SurfaceRef surf = NULL;
+    PF_EffectCustomUISuite1* cui = NULL;
+    ERR(AEFX_AcquireSuite(in_data, out_data, kPFEffectCustomUISuite, kPFEffectCustomUISuiteVersion1, NULL, (void**)&cui));
+    if (!err && cui) { ERR(cui->PF_GetDrawingReference(ev->contextH, &drawRef)); AEFX_ReleaseSuite(in_data, out_data, kPFEffectCustomUISuite, kPFEffectCustomUISuiteVersion1, NULL); }
+    ERR(db.drawbot_suiteP->GetSupplier(drawRef, &sup));
+    ERR(db.drawbot_suiteP->GetSurface(drawRef, &surf));
+    if (!err) {
+        db.surface_suiteP->PushStateStack(surf);
+        float fontSize = 11.f; db.supplier_suiteP->GetDefaultFontSize(sup, &fontSize);
+        DRAWBOT_FontRef font = NULL; ERR(db.supplier_suiteP->NewDefaultFont(sup, fontSize, &font));
+        const DRAWBOT_ColorRGBA cFill = { 0.30f, 0.30f, 0.30f, 1 }, cOn = { 0.16f, 0.45f, 0.85f, 1 }, cEdge = { 0.14f, 0.14f, 0.14f, 1 }, cText = { 0.92f, 0.92f, 0.92f, 1 };
+        DRAWBOT_BrushRef bFill = NULL, bOn = NULL, bText = NULL; DRAWBOT_PenRef pen = NULL;
+        ERR(db.supplier_suiteP->NewBrush(sup, &cFill, &bFill));
+        ERR(db.supplier_suiteP->NewBrush(sup, &cOn, &bOn));
+        ERR(db.supplier_suiteP->NewBrush(sup, &cText, &bText));
+        ERR(db.supplier_suiteP->NewPen(sup, &cEdge, 1.f, &pen));
+        for (int i = 0; i < q.n && !err; i++) {
+            BtnRect r = QuickBtnRect(q, ev->effect_win.current_frame, i);
+            DRAWBOT_PathRef path = NULL; ERR(db.supplier_suiteP->NewPath(sup, &path));
+            DRAWBOT_RectF32 rr = { r.x + 0.5f, r.y + 0.5f, r.w, r.h };
+            ERR(db.path_suiteP->AddRect(path, &rr));
+            ERR(db.surface_suiteP->FillPath(surf, QuickIsActive(q, params, i) ? bOn : bFill, path, kDRAWBOT_FillType_Default));
+            ERR(db.surface_suiteP->StrokePath(surf, pen, path));
+            DRAWBOT_UTF16Char txt[16]; ToUTF16(q.labels[i], txt, 16);
+            DRAWBOT_PointF32 org = { r.x + r.w * 0.5f, r.y + r.h * 0.5f + fontSize * 0.36f };
+            ERR(db.surface_suiteP->DrawString(surf, bText, font, txt, &org, kDRAWBOT_TextAlignment_Center, kDRAWBOT_TextTruncation_None, 0.f));
+            if (path) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)path));
+        }
+        if (pen)   ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)pen));
+        if (bText) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)bText));
+        if (bOn)   ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)bOn));
+        if (bFill) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)bFill));
+        if (font)  ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)font));
+        db.surface_suiteP->PopStateStack(surf);
+    }
+    ERR2(AEFX_ReleaseDrawbotSuites(in_data, out_data));
+    if (!err) ev->evt_out_flags = PF_EO_HANDLED_EVENT;
+    return err;
+}
+
+static PF_Err QuickClick(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_EventExtra* ev, const QuickRow& q)
+{
+    PF_Err err = PF_Err_NONE;
+    if (ev->effect_win.area != PF_EA_CONTROL) return err;
+    const PF_Point pt = ev->u.do_click.screen_point;
+    for (int i = 0; i < q.n; i++) {
+        BtnRect r = QuickBtnRect(q, ev->effect_win.current_frame, i);
+        if (pt.h < r.x || pt.h >= r.x + r.w || pt.v < r.y || pt.v >= r.y + r.h) continue;
+        if (q.kind == 0) {
+            params[q.target]->u.ad.value = FLOAT2FIX(q.values[i]);
+            params[q.target]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        } else if (q.kind == 1) {
+            params[q.target]->u.fs_d.value = q.values[i];
+            params[q.target]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        } else {
+            A_long cols = params[BC_COLS]->u.sd.value, rows = params[BC_ROWS]->u.sd.value;
+            int sx = i % 3, sy = i / 3;
+            A_long ox = (sx == 0) ? 1 : (sx == 1 ? (cols + 1) / 2 : cols);
+            A_long oy = (sy == 0) ? 1 : (sy == 1 ? (rows + 1) / 2 : rows);
+            params[q.target]->u.sd.value = ox;  params[q.target]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+            params[q.target2]->u.sd.value = oy; params[q.target2]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        }
+        PF_Rect inval(ev->effect_win.current_frame);
+        AEGP_SuiteHandler suites(in_data->pica_basicP);
+        suites.AppSuite4()->PF_InvalidateRect(ev->contextH, &inval);
+        ev->evt_out_flags = PF_EO_HANDLED_EVENT | PF_EO_UPDATE_NOW;
+        break;
+    }
+    return err;
+}
+
+static PF_Err HandleEvent(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_EventExtra* ev)
+{
+    if (!ev->contextH || (*ev->contextH)->w_type != PF_Window_EFFECT) return PF_Err_NONE;
+    const QuickRow* q = FindQuick(ev->effect_win.index);
+    if (!q) return PF_Err_NONE;
+    switch (ev->e_type) {
+        case PF_Event_DRAW:     return QuickDraw(in_data, out_data, params, ev, *q);
+        case PF_Event_DO_CLICK: return QuickClick(in_data, out_data, params, ev, *q);
+        default: return PF_Err_NONE;
+    }
+}
+
+
 
 // ── 배치 모드별 파라미터 표시/숨김 (AE 는 PF_PUI_INVISIBLE 을 동적으로 못 바꾸므로 스트림 플래그 사용) ──
 
@@ -126,35 +308,25 @@ static PF_Err UpdateParamsUI(PF_InData* in_data, PF_OutData* out_data, PF_ParamD
     ERR(suites.PFInterfaceSuite1()->AEGP_GetNewEffectForEffect(g_plugin_id, in_data->effect_ref, &meH));
     if (err || !meH) return err;
 
-    struct Vis { int idx; bool linear, grid, radial; };
-    static const Vis table[] = {
-        { BC_COUNT,       true,  false, true  },
-        { BC_ORIGIN,      true,  false, false },
-        { BC_DIR,         true,  false, false },
-        { BC_GAP,         true,  false, false },
-        { BC_OFFSET,      true,  false, false },
-        { BC_COLS,        false, true,  false },
-        { BC_ROWS,        false, true,  false },
-        { BC_GAP_X,       false, true,  false },
-        { BC_GAP_Y,       false, true,  false },
-        { BC_GRID_ORIGIN, false, true,  false },
-        { BC_RADIUS,      false, false, true  },
-        { BC_START_ANGLE, false, false, true  },
-        { BC_SWEEP,       false, false, true  },
-        { BC_FACE_OUT,    false, false, true  },
-        { BC_CENTER,      false, false, true  },
-    };
-    for (const Vis& v : table) {
-        bool show;
-        if (mode == BC_MODE_GRID) show = v.grid;
-        else if (mode == BC_MODE_RADIAL) show = v.radial;
-        else show = v.linear;
+    // Grid 에서는 Count 를 숨김 (리프 스트림 숨김은 정상 동작)
+    {
         AEGP_StreamRefH sH = NULL;
-        ERR(suites.StreamSuite2()->AEGP_GetNewEffectStreamByIndex(g_plugin_id, meH, v.idx, &sH));
-        if (!err && sH) ERR(suites.DynamicStreamSuite2()->AEGP_SetDynamicStreamFlag(sH, AEGP_DynStreamFlag_HIDDEN, FALSE, !show));
+        ERR(suites.StreamSuite2()->AEGP_GetNewEffectStreamByIndex(g_plugin_id, meH, BC_COUNT, &sH));
+        if (!err && sH) ERR(suites.DynamicStreamSuite2()->AEGP_SetDynamicStreamFlag(sH, AEGP_DynStreamFlag_HIDDEN, FALSE, mode == BC_MODE_GRID));
         if (sH) ERR2(suites.StreamSuite2()->AEGP_DisposeStream(sH));
     }
+    // 배치 그룹은 숨기지 않고(숨긴 그룹의 커스텀 컨트롤·펼친 다이얼이 ECW 에 남음) 활성 그룹만 펼치고 나머지는 접는다
+    struct G { int idx; int forMode; };
+    static const G groups[] = { { BC_G_LINEAR, BC_MODE_LINEAR }, { BC_G_GRID, BC_MODE_GRID }, { BC_G_RADIAL, BC_MODE_RADIAL } };
+    for (const G& g : groups) {
+        PF_ParamDef copy = *params[g.idx];
+        copy.param_type = PF_Param_GROUP_START;
+        if (g.forMode == mode) copy.flags &= ~PF_ParamFlag_COLLAPSE_TWIRLY;
+        else                   copy.flags |=  PF_ParamFlag_COLLAPSE_TWIRLY;
+        ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, g.idx, &copy));
+    }
     ERR2(suites.EffectSuite2()->AEGP_DisposeEffect(meH));
+
     return err;
 }
 
@@ -164,6 +336,15 @@ static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_Para
     if (extra->param_index == BC_MODE) {
         err = UpdateParamsUI(in_data, out_data, params);
         out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+    }
+    // Origin X ≤ Columns, Origin Y ≤ Rows 로 고정 (어느 쪽을 바꿔도)
+    if (extra->param_index == BC_COLS || extra->param_index == BC_ORIGIN_X) {
+        A_long cols = params[BC_COLS]->u.sd.value, ox = params[BC_ORIGIN_X]->u.sd.value;
+        if (ox > cols) { params[BC_ORIGIN_X]->u.sd.value = cols; params[BC_ORIGIN_X]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE; }
+    }
+    if (extra->param_index == BC_ROWS || extra->param_index == BC_ORIGIN_Y) {
+        A_long rows = params[BC_ROWS]->u.sd.value, oy = params[BC_ORIGIN_Y]->u.sd.value;
+        if (oy > rows) { params[BC_ORIGIN_Y]->u.sd.value = rows; params[BC_ORIGIN_Y]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE; }
     }
     return err;
 }
@@ -186,7 +367,7 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     PF_ParamDef pd;
     BC_PreRenderData* d = new BC_PreRenderData();
 
-    A_long mode = BC_MODE_LINEAR, count = 5, origin = 1, dir = BC_DIR_H, cols = 3, rows = 3, gridOrigin = 5, faceOut = 0, seed = 0;
+    A_long mode = BC_MODE_LINEAR, count = 5, origin = 1, dir = BC_DIR_H, cols = 3, rows = 3, originX = 2, originY = 2, faceOut = 0, seed = 0;
     double gap = 0, offset = 0, gapX = 0, gapY = 0, radius = 0, startAng = 0, sweep = 360;
     double cx = 0, cy = 0, rotStep = 0, scaleStep = 0, opEnd = 1, randPos = 0, randRot = 0, randScale = 0;
 
@@ -201,7 +382,8 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     CHK(BC_ROWS);        rows       = pd.u.sd.value;
     CHK(BC_GAP_X);       gapX       = pd.u.fs_d.value;
     CHK(BC_GAP_Y);       gapY       = pd.u.fs_d.value;
-    CHK(BC_GRID_ORIGIN); gridOrigin = pd.u.pd.value;
+    CHK(BC_ORIGIN_X);    originX    = pd.u.sd.value;
+    CHK(BC_ORIGIN_Y);    originY    = pd.u.sd.value;
     CHK(BC_RADIUS);      radius     = pd.u.fs_d.value;
     CHK(BC_START_ANGLE); startAng   = FIX_2_FLOAT(pd.u.ad.value);
     CHK(BC_SWEEP);       sweep      = pd.u.fs_d.value;
@@ -245,18 +427,14 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     if (n < 1) n = 1;
     if (origin < 1) origin = 1;
     if (origin > n) origin = n;
-    // Grid Origin (9방향) → 원본이 놓이는 칸
-    A_long oc = 0, orow = 0;
-    {
-        int gi = (int)gridOrigin - 1;
-        if (gi < 0 || gi > 8) gi = 4;
-        int hx = gi % 3, vy = gi / 3;   // 0 left/top, 1 center, 2 right/bottom
-        if (hx == 0) oc = 0; else if (hx == 1) oc = (cols - 1) / 2; else oc = cols - 1;
-        if (vy == 0) orow = 0; else if (vy == 1) orow = (rows - 1) / 2; else orow = rows - 1;
-    }
+    // Origin X/Y (1 기준) → 원본이 놓이는 칸 (Columns/Rows 로 제한)
+    A_long oc = std::min(std::max(originX, (A_long)1), cols) - 1, orow = std::min(std::max(originY, (A_long)1), rows) - 1;
     d->xf.reserve(n);
+    // 단계(회전·크기)는 원본을 0 으로 두고 앞뒤로 누적 (Linear: Origin Index, Grid: Origin X/Y 칸, Radial: 첫 클론)
+    const A_long originIdx = (mode == BC_MODE_GRID) ? (orow * cols + oc) : (mode == BC_MODE_LINEAR ? origin - 1 : 0);
     for (A_long i = 0; i < n; i++) {
-        double px, py, rot = rotStep * i, sc = 1.0 + scaleStep * i;
+        const double k = (double)(i - originIdx);
+        double px, py, rot = rotStep * k, sc = 1.0 + scaleStep * k;
         if (mode == BC_MODE_GRID) {
             A_long col = i % cols, row = i / cols;
             px = pvx + (col - oc) * (srcW + gapX);
@@ -269,7 +447,6 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
             if (faceOut) rot += ang + 90.0;
         } else {
             // Linear: 원본(Origin Index)을 기준으로 앞뒤로 진행. Gap = 이웃 경계 사이 거리
-            double k = (double)(i - (origin - 1));
             if (dir == BC_DIR_V) { px = pvx + k * offset; py = pvy + k * (srcH + gap); }
             else                 { px = pvx + k * (srcW + gap); py = pvy + k * offset; }
         }
@@ -501,6 +678,7 @@ PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutData* out_data, PF_Param
             case PF_Cmd_PARAMS_SETUP:       err = ParamsSetup(in_data, out_data, params, output); break;
             case PF_Cmd_UPDATE_PARAMS_UI:   err = UpdateParamsUI(in_data, out_data, params); break;
             case PF_Cmd_USER_CHANGED_PARAM: err = UserChangedParam(in_data, out_data, params, (const PF_UserChangedParamExtra*)extra); break;
+            case PF_Cmd_EVENT:              err = HandleEvent(in_data, out_data, params, (PF_EventExtra*)extra); break;
             case PF_Cmd_SMART_PRE_RENDER:   err = PreRender(in_data, out_data, (PF_PreRenderExtra*)extra); break;
             case PF_Cmd_SMART_RENDER:       err = SmartRender(in_data, out_data, (PF_SmartRenderExtra*)extra); break;
             default: break;

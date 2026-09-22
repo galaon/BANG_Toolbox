@@ -6,6 +6,7 @@
 #include "AE_Effect.h"
 #include "AE_EffectCB.h"
 #include "AE_EffectCBSuites.h"
+#include "AE_EffectUI.h"
 #include "AE_Macros.h"
 #include "Param_Utils.h"
 #include "AEGP_SuiteHandler.h"
@@ -14,43 +15,63 @@
 #include <vector>
 
 #define BANG_CLONER_MAJOR   1
-#define BANG_CLONER_MINOR   1
+#define BANG_CLONER_MINOR   2
 #define BANG_CLONER_BUG     0
 #define BANG_CLONER_STAGE   PF_Stage_DEVELOP
 #define BANG_CLONER_BUILD   1
 
-// 파라미터 인덱스 (0 = 입력 레이어). 그룹(topic) 없이 평면 — 스트림 인덱스와 1:1 로 맞추기 위함
+// 파라미터 인덱스 (0 = 입력 레이어). 그룹(topic) 포함 — AE 의 스트림 인덱스는 이 인덱스와 1:1 (그룹 시작/끝도 스트림)
 enum {
     BC_INPUT = 0,
-    BC_MODE,          // Layout: Linear | Grid | Radial
-    BC_COUNT,         // Count (Linear·Radial)
-    BC_ORIGIN,        // Origin Index — 원본이 몇 번째인지 (Linear, 1 기준)
-    BC_DIR,           // Direction: Horizontal | Vertical (Linear)
-    BC_GAP,           // Gap — 이웃 클론 경계 사이 px, 음수 = 겹침 (Linear)
-    BC_OFFSET,        // Offset — 진행 방향과 수직으로 클론당 px (Linear)
-    BC_COLS,          // Columns (Grid)
-    BC_ROWS,          // Rows (Grid)
-    BC_GAP_X,         // Gap X (Grid)
-    BC_GAP_Y,         // Gap Y (Grid)
-    BC_GRID_ORIGIN,   // Grid Origin — 원본이 놓이는 칸 (9방향, Grid)
-    BC_RADIUS,        // Radius (Radial)
-    BC_START_ANGLE,   // Start Angle (Radial)
-    BC_SWEEP,         // Sweep (Radial)
-    BC_FACE_OUT,      // Face Outward (Radial)
-    BC_CENTER,        // Center — 원 중심, 레이어 좌표 (Radial)
-    BC_ROT_STEP,      // Rotation Step (클론당 °)
-    BC_SCALE_STEP,    // Scale Step (클론당 %)
-    BC_OPACITY_END,   // End Opacity (%)
-    BC_RAND_POS,      // Random Position (px)
-    BC_RAND_ROT,      // Random Rotation (°)
-    BC_RAND_SCALE,    // Random Scale (%)
-    BC_SEED,          // Seed
+    BC_MODE,            // Layout: Linear | Grid | Radial
+    BC_COUNT,           // Count (Linear·Radial)
+
+    BC_G_LINEAR,        // ── Linear ──
+    BC_ORIGIN,          //   Origin Index — 원본이 몇 번째인지 (1 기준)
+    BC_DIR,             //   Direction: Horizontal | Vertical
+    BC_GAP,             //   Gap — 이웃 클론 경계 사이 px, 음수 = 겹침
+    BC_OFFSET,          //   Offset — 진행 방향과 수직으로 클론당 px
+    BC_G_LINEAR_END,
+
+    BC_G_GRID,          // ── Grid ──
+    BC_COLS,            //   Columns
+    BC_ROWS,            //   Rows
+    BC_GAP_X,           //   Gap X
+    BC_GAP_Y,           //   Gap Y
+    BC_ORIGIN_X,        //   Origin X — 원본이 놓이는 열 (1 기준, ≤ Columns)
+    BC_ORIGIN_Y,        //   Origin Y — 원본이 놓이는 행 (1 기준, ≤ Rows)
+    BC_ORIGIN_QUICK,    //   [커스텀 UI] 9방향 퀵 버튼 → Origin X/Y
+    BC_G_GRID_END,
+
+    BC_G_RADIAL,        // ── Radial ──
+    BC_RADIUS,          //   Radius
+    BC_START_ANGLE,     //   Start Angle
+    BC_START_QUICK,     //   [커스텀 UI] 각도 퀵 버튼 → Start Angle
+    BC_SWEEP,           //   Sweep
+    BC_SWEEP_QUICK,     //   [커스텀 UI] 각도 퀵 버튼 → Sweep
+    BC_FACE_OUT,        //   Face Outward
+    BC_CENTER,          //   Center — 원 중심, 레이어 좌표
+    BC_G_RADIAL_END,
+
+    BC_G_STEP,          // ── Step ──
+    BC_ROT_STEP,        //   Rotation Step (클론당 °)
+    BC_ROT_QUICK,       //   [커스텀 UI] 각도 퀵 버튼 → Rotation Step
+    BC_SCALE_STEP,      //   Scale Step (클론당 %)
+    BC_OPACITY_END,     //   End Opacity (%)
+    BC_G_STEP_END,
+
+    BC_G_RANDOM,        // ── Random ──
+    BC_SEED,            //   Seed
+    BC_RAND_POS,        //   Random Position (px)
+    BC_RAND_ROT,        //   Random Rotation (°)
+    BC_RAND_SCALE,      //   Random Scale (%)
+    BC_G_RANDOM_END,
+
     BC_NUM_PARAMS
 };
 
 enum { BC_MODE_LINEAR = 1, BC_MODE_GRID = 2, BC_MODE_RADIAL = 3 };
 enum { BC_DIR_H = 1, BC_DIR_V = 2 };
-// Grid Origin: 1 Top Left · 2 Top · 3 Top Right · 4 Left · 5 Center · 6 Right · 7 Bottom Left · 8 Bottom · 9 Bottom Right
 
 // 클론 하나의 변환: 출력 = [a b; c d]·소스 + [tx ty] (레이어 좌표) + 불투명도
 struct BC_Xf { double a, b, c, d, tx, ty; float opacity; };

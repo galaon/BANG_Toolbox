@@ -3,6 +3,14 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.1] — 2026-09-22
+
+### Changed (BANG Cloner v1.2 — Effect Controls 정리)
+- **그룹**: 파라미터를 `Linear` / `Grid` / `Radial` / `Step` / `Random` 접이식 그룹으로 정리. 배치(Layout)에 맞는 그룹만 자동으로 펼쳐지고 나머지는 접힘. Grid 에선 `Count` 숨김.
+- **퀵 버튼**: `Start Angle`·`Sweep`·`Rotation Step` 아래 `Preset` 버튼 줄(0·15·30·45·60·90·120·180 / 45·90·180·270·360) — 클릭 한 번으로 값 설정, 현재 값은 강조 표시.
+- **Grid Origin → `Origin X` / `Origin Y`** 슬라이더(1 기준, `Columns`/`Rows` 를 넘으면 자동 보정) + `Origin Preset` 9방향 버튼(↖ ↑ ↗ ← ● → ↙ ↓ ↘, ● = Center).
+- 회전/크기 단계는 **원본 클론을 0 으로** 앞뒤로 누적(이전엔 항상 첫 클론 기준).
+
 ## [1.3.0] — 2026-09-22
 
 ### Added

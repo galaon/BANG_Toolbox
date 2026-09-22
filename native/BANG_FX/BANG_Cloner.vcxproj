@@ -96,6 +96,7 @@ cl /D "MSWindows" /EP "$(IntDir)%(Filename).rrc" &gt; "$(MSBuildThisFileDirector
   <ItemGroup>
     <ClCompile Include="src\BANG_Cloner.cpp" />
     <ClCompile Include="$(AE_SDK_DIR)\Util\AEGP_SuiteHandler.cpp" />
+    <ClCompile Include="$(AE_SDK_DIR)\Util\AEFX_SuiteHelper.c" />
     <ClCompile Include="$(AE_SDK_DIR)\Util\MissingSuiteError.cpp" />
   </ItemGroup>
   <ItemGroup>

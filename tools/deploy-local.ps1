@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Mirror this repo into the local CEP extensions folder for testing in After Effects.
 
@@ -45,10 +45,12 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($Scope -eq 'Machine' -and -not $isAdmin -and -not $WhatIf) {
   Write-Host "Elevation required for $extDir - relaunching as administrator..." -ForegroundColor Yellow
-  $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit',
+  # 승격 창은 끝나면 닫히도록(-NoExit 금지: 남아 있는 관리자 창이 자동화 스크린샷을 가리고 클릭을 막는다) 숨겨서 실행하고 끝날 때까지 기다린다
+  $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
             '-File', "`"$PSCommandPath`"", '-Scope', $Scope)
   if ($PurgeStale) { $args += '-PurgeStale' }
-  Start-Process powershell.exe -Verb RunAs -ArgumentList $args
+  $p = Start-Process powershell.exe -Verb RunAs -ArgumentList $args -Wait -PassThru
+  if ($p.ExitCode -ne 0) { Write-Warning "elevated deploy exited with $($p.ExitCode)" } else { Write-Host "Deployed (elevated) to $target" -ForegroundColor Green }
   return
 }
 

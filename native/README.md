@@ -42,15 +42,19 @@ native/
 - 다운샘플(해상도 1/2 등) 시 px 파라미터를 비율로 보정.
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)
-소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 출력에 over 합성(Motion Tile 모델). 파라미터(영문, 평면 — 그룹 없음):
-- 공통: `Layout`(Linear/Grid/Radial) · `Rotation Step` · `Scale Step` · `End Opacity` · `Random Position/Rotation/Scale` · `Seed`
-- Linear: `Count` · `Origin Index`(몇 번째 클론이 원본 자리인지, 1 기준) · `Direction`(Horizontal/Vertical) · `Gap`(이웃 클론 **경계 사이** px, 음수 = 겹침) · `Offset`(진행 방향과 수직으로 클론당 px)
-- Grid: `Columns` · `Rows` · `Gap X/Y` · `Grid Origin`(원본이 놓이는 칸, 9방향; Center 는 짝수일 때 왼쪽/위쪽 칸)
-- Radial: `Count` · `Radius` · `Start Angle` · `Sweep` · `Face Outward` · `Center`(레이어 좌표, 기본 50%)
+소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 출력에 over 합성(Motion Tile 모델). 파라미터(영문, v1.2 = 그룹 5개):
+- 최상위: `Layout`(Linear/Grid/Radial) · `Count`(Linear·Radial, Grid 에선 숨김)
+- `Linear`: `Origin Index`(몇 번째 클론이 원본 자리인지, 1 기준) · `Direction`(Horizontal/Vertical) · `Gap`(이웃 클론 **경계 사이** px, 음수 = 겹침) · `Offset`(진행 방향과 수직으로 클론당 px)
+- `Grid`: `Columns` · `Rows` · `Gap X/Y` · `Origin X` / `Origin Y`(원본이 놓이는 칸, 1 기준; Columns/Rows 를 넘으면 `USER_CHANGED_PARAM` 에서 보정) · `Origin Preset`(9방향 퀵 버튼)
+- `Radial`: `Radius` · `Start Angle` + `Preset` 버튼 · `Sweep` + `Preset` 버튼 · `Face Outward` · `Center`(레이어 좌표, 기본 50%)
+- `Step`: `Rotation Step` + `Preset` 버튼 · `Scale Step` · `End Opacity` — 단계는 **원본 클론을 0** 으로 앞뒤 누적
+- `Random`: `Seed` · `Random Position/Rotation/Scale`
+- 퀵 버튼 = `PF_Param_CHECKBOX`(값 미사용, `CANNOT_TIME_VARY`) + `PF_PUI_CONTROL` 커스텀 컨트롤. `PF_OutFlag_CUSTOM_UI` + `register_ui`, `PF_Cmd_EVENT` 의 `PF_Event_DRAW`(Drawbot: AddRect/FillPath/StrokePath/DrawString Center 정렬) 와 `PF_Event_DO_CLICK`(`screen_point` 와 `effect_win.current_frame` 은 같은 좌표계) 로 그리기/클릭. 클릭 시 대상 파라미터 값을 바꾸고 `PF_ChangeFlag_CHANGED_VALUE` + `PF_InvalidateRect` + `PF_EO_UPDATE_NOW`.
+- 그룹 표시: 활성 배치 그룹만 `PF_UpdateParamUI`(`PF_Param_GROUP_START`, `COLLAPSE_TWIRLY` 토글) 로 펼치고 나머지는 접음. `PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG` 로 그룹 기본 펼침(flags=0). 각도 파라미터는 `COLLAPSE_TWIRLY` 로 다이얼 접어 시작.
 - Gap 은 소스 **내용 경계 크기**(`max_result_rect`) 를 더해 걸음 폭으로 바꾼다(`srcW + gap`) → 해상도가 커도 "여백 px" 만 조절. 피벗 = 내용 경계 중심: 회전·크기는 각 클론 자신의 중심 기준, Linear 는 원본 자리에서 출발.
 - 출력 `max_result_rect` = 모든 클론으로 변환한 입력 경계의 합집합(+1px). `result_rect` = 요청 ∩ 최대 → 실제 버퍼는 요청 크기만. 입력은 전체(±100000)를 요청해 AE 가 레이어 경계로 자른다.
 - 렌더 경로: (1) 회전·크기 없음 + 정수 이동 → 픽셀 직접 복사, (2) 그 외 → 역행렬 증분 바이리니어(float). 두 경로 모두 행 범위를 최대 8 스레드로 분할(`ParallelRows`). 실측 1440×2560 솔리드: 5 클론 ≈ +143 ms, 20 클론 회전 ≈ +186 ms(PNG 저장 포함).
-- 배치 모드별 항목 숨김: AE 는 `PF_PUI_INVISIBLE` 을 동적으로 못 바꾸므로 `AEGP_DynamicStreamSuite2::AEGP_SetDynamicStreamFlag(HIDDEN)` 을 `PF_Cmd_UPDATE_PARAMS_UI`/`USER_CHANGED_PARAM`(`Layout` popup 은 `PF_ParamFlag_SUPERVISE`) 에서 호출. 플러그인 ID 는 GlobalSetup 의 `AEGP_RegisterWithAEGP`. 그룹(topic) 을 안 쓴 이유: 스트림 인덱스 = 파라미터 인덱스 를 단순하게 유지.
+- 항목 숨김(Grid 의 `Count`): AE 는 `PF_PUI_INVISIBLE` 을 동적으로 못 바꾸므로 `AEGP_DynamicStreamSuite2::AEGP_SetDynamicStreamFlag(HIDDEN)` 을 `PF_Cmd_UPDATE_PARAMS_UI`/`USER_CHANGED_PARAM`(`Layout` popup 은 `PF_ParamFlag_SUPERVISE`) 에서 호출. 플러그인 ID 는 GlobalSetup 의 `AEGP_RegisterWithAEGP`. 스트림 인덱스 = 파라미터 인덱스(그룹 시작/끝 포함).
 - 실측(AE 2026, 100×100 사각형): Linear Count 4·Gap 50 → 중심 300/450/600/750, Origin Index 3 → 0/150/300/450, Gap −20 → 겹침 340 px 띠, Vertical+Offset 30 → (300,400)(330,550)(360,700), Scale Step −20% → 100/80/60/40 제자리 축소, Grid 3×2 Gap 50/25 Top Left → 열 300/450/600 · 행 400/525, Radial r200 → 상하좌우 200, 애니메이션 소스 → 클론 전부 같은 프레임.
 
 ## 겪은 함정
@@ -63,3 +67,6 @@ native/
 - 경계 픽셀 판정: 전경은 dIn, 배경은 dOut 만 본다 — 자기 자신은 항상 씨앗(거리 0)이라 둘 다 보면 전부 경계로 오판.
 - SDK 헤더에 CP949 로 표현 불가한 문자가 있어 `/utf-8` 없이는 C4819 → 오류.
 - PiPL `AE_Effect_Version` 은 `PF_VERSION(major,minor,bug,stage,build)` 와 같아야 한다: `(major<<19)|(minor<<15)|(bug<<11)|(stage<<9)|build` → 1.0.0 dev b1 = 524289, 1.1.0 = 557057.
+- **그룹 안의 스트림을 숨기면** 펼쳐진 다이얼·커스텀 컨트롤의 본문이 ECW 에 남는다(제목만 사라짐) → 그룹은 숨기지 말고 **접는다**(`PF_UpdateParamUI` + `COLLAPSE_TWIRLY`). 리프(Count 같은 슬라이더) 숨김은 정상.
+- `PF_Param_NO_DATA` 커스텀 컨트롤도 숨긴 그룹에서 행이 남는다 → 퀵 버튼은 체크박스형 + `PF_PUI_CONTROL` 로.
+- **관리자 PowerShell 창 함정**: `deploy-local.ps1` 의 승격 창이 남아 있으면 computer-use 스크린샷에서 검은 사각형(마스크)으로 AE 위를 덮어 "ECW 가 깨졌다"는 착각을 일으킨다(이 세션에서 그룹/커스텀 UI 를 두 번 잘못 의심함). 화면이 이상하면 먼저 `Get-Process | ? MainWindowTitle` 로 `관리자: Windows PowerShell` 을 찾아 승격 `Stop-Process`.
