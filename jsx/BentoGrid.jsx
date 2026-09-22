@@ -360,9 +360,14 @@
         var compPAR = 1;
         var parX;
         var angle;
+        var isVector = false;        // BANG_Toolbox: 셰이프/텍스트 레이어 — 내용 경계(sourceRectAtTime)로 측정
+        var contentRect = null;
+        var centerX = 0, centerY = 0;
 
         try {
-            if (!(layer instanceof AVLayer) || !layer.hasVideo || layer.nullLayer || layer.adjustmentLayer) {
+            isVector = (layer instanceof ShapeLayer) || (layer instanceof TextLayer);
+            // (ExtendScript 의 ShapeLayer/TextLayer 는 instanceof AVLayer 가 false 로 나올 수 있어 따로 허용)
+            if ((!isVector && !(layer instanceof AVLayer)) || !layer.hasVideo || layer.nullLayer || layer.adjustmentLayer) {
                 return {reason: "not a visual AV layer"};
             }
         } catch (typeError) {
@@ -391,20 +396,22 @@
         } catch (sourceError) {
             source = null;
         }
-        if (!source) {
+        if (!source && !isVector) {
             return {reason: "no measurable source"};
         }
 
-        try {
-            isFootage = source instanceof FootageItem;
-        } catch (ignoreFootageType) {
-        }
-        try {
-            isPrecomp = source instanceof CompItem;
-        } catch (ignoreCompType) {
-        }
-        if (!isFootage && !isPrecomp) {
-            return {reason: "unsupported source type"};
+        if (!isVector) {
+            try {
+                isFootage = source instanceof FootageItem;
+            } catch (ignoreFootageType) {
+            }
+            try {
+                isPrecomp = source instanceof CompItem;
+            } catch (ignoreCompType) {
+            }
+            if (!isFootage && !isPrecomp) {
+                return {reason: "unsupported source type"};
+            }
         }
 
         if (isFootage) {
@@ -424,7 +431,7 @@
         }
 
         try {
-            if (layer.collapseTransformation) {
+            if (!isVector && layer.collapseTransformation) {
                 return {reason: "continuous rasterization/collapse transformations"};
             }
         } catch (ignoreCollapse) {
@@ -454,8 +461,18 @@
         }
 
         try {
-            sourceWidth = Number(layer.width);
-            sourceHeight = Number(layer.height);
+            if (isVector) {
+                contentRect = layer.sourceRectAtTime(comp.time, false);
+                sourceWidth = Number(contentRect.width);
+                sourceHeight = Number(contentRect.height);
+                centerX = Number(contentRect.left) + sourceWidth / 2;    // 레이어 공간(중심 원점) — 앵커와 같은 공간
+                centerY = Number(contentRect.top) + sourceHeight / 2;
+            } else {
+                sourceWidth = Number(layer.width);
+                sourceHeight = Number(layer.height);
+                centerX = sourceWidth / 2;
+                centerY = sourceHeight / 2;
+            }
         } catch (dimensionError) {
             return {reason: "unreadable source dimensions"};
         }
@@ -465,7 +482,7 @@
         }
 
         try {
-            sourcePAR = Number(source.pixelAspect);
+            sourcePAR = isVector ? 1 : Number(source.pixelAspect);
         } catch (ignoreSourcePAR) {
             sourcePAR = 1;
         }
@@ -493,6 +510,9 @@
                 positionInfo: positionInfo,
                 sourceWidth: sourceWidth,
                 sourceHeight: sourceHeight,
+                sourceCenterX: centerX,
+                sourceCenterY: centerY,
+                isVector: isVector,
                 sourcePAR: sourcePAR,
                 parX: parX,
                 displayWidth: sourceWidth * parX,
@@ -2062,8 +2082,8 @@
     }
 
     function fallbackCropVertices(item, tileRect, fitFactor) {
-        var centerX = item.sourceWidth / 2;
-        var centerY = item.sourceHeight / 2;
+        var centerX = item.sourceCenterX + (item.isVector ? item.layer.width / 2 : 0);
+        var centerY = item.sourceCenterY + (item.isVector ? item.layer.height / 2 : 0);
         var halfWidth = tileRect.width / (2 * fitFactor * item.parX);
         var halfHeight = tileRect.height / (2 * fitFactor);
 
@@ -2174,8 +2194,8 @@
         }
 
         anchor = item.anchorProperty.value;
-        sourceCenterX = item.sourceWidth / 2;
-        sourceCenterY = item.sourceHeight / 2;
+        sourceCenterX = item.sourceCenterX;
+        sourceCenterY = item.sourceCenterY;
         tileCenterX = tileRect.left + tileRect.width / 2;
         tileCenterY = tileRect.top + tileRect.height / 2;
         positionX = tileCenterX - (sourceCenterX - anchor[0]) * fitFactor * item.parX;

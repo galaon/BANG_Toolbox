@@ -3,6 +3,18 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.6] — 2026-09-22
+
+### Added
+- **BANG Cloner v1.7 — Path 를 셰이프 레이어로** — `Path Layer` 에서 컴프 안 **셰이프 레이어를 직접 선택**(펜 패스·사각형(둥근 모서리)·타원, 그룹 변환·레이어 위치/회전/크기 반영, 패스 여러 개면 이어서). Path Layer 가 없으면 `Mask Path` 폴백. 애니메이션: `Start`/`End`(배치 구간), `Offset`(키프레임), **`Speed (%/s)`**(키프레임 없이 흐름, 음수 = 역방향), `Reverse`, `Loop`(끄면 끝에 멈춤), `Align to Path` + `Align Angle`.
+- **BANG Cloner — `Random Opacity`**, **`Bake to Layers` 버튼**(이펙트 맨 아래): 현재 프레임의 클론을 실제 레이어(복제본, 이펙트 제거)로 굳히고 원본은 숨김. 실행 취소 1회로 복원.
+- **Bento Grid** — 셰이프·텍스트 레이어도 배치(내용 경계 기준). 이전엔 "not a visual AV layer" 로 건너뛰던 문제.
+
+### Changed
+- Cloner 타일: 레이어 + 셰이프 레이어 선택 시 `Path Layer` 를 설정(마스크 복사 방식 폐기). 두 셰이프 레이어면 채우기 없는 쪽(없으면 펜 패스 쪽)이 경로.
+- 패널 카드 간격 축소, Bento 아이콘 교체.
+- 네이티브: PreRender 에서 AEGP 를 쓰므로 MFR(`SUPPORTS_THREADED_RENDERING`) 플래그 해제(렌더 내부 멀티스레드는 유지), `NON_PARAM_VARY`(Speed).
+
 ## [1.3.5] — 2026-09-22
 
 ### Added

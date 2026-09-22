@@ -1453,90 +1453,31 @@ function applyCloner(ffxPath) {
 
 // ── 네이티브 이펙트 (native/*.aex — BANG Cloner · BANG Stroke) ──
 // 선택한 레이어마다 matchName 이펙트를 추가(이미 있으면 그대로). 플러그인 미설치면 {missing:true}
-// ── Cloner Path: 셰이프 레이어의 패스를 클로너 레이어의 마스크("BANG Path")로 복사하고 Layout=Path 로 설정 ──
-// 셰이프 그룹 변환(앵커·크기·회전·위치)을 안쪽부터 적용 → 레이어 공간 → toComp → 대상 레이어 fromComp.
-// 마스크 좌표는 셰이프/텍스트 레이어에서 좌상단 원점이라 절반 크기를 더한다. (파라메트릭 사각형/타원은 미지원 — 패스로 변환 필요)
-function _clShapePaths(layer) {
+// ── Cloner Path: 대상 레이어에 BANG Cloner 를 넣고 Layout = Path, Path Layer = 셰이프 레이어 (패스 읽기는 플러그인이 AEGP 로 직접) ──
+function _clShapePaths(layer) {   // 펜 패스·사각형·타원 유무 (경로 소스 판별용)
     var out = [];
     function walk(group) {
         for (var i = 1; i <= group.numProperties; i++) {
             var pr = group.property(i);
-            if (pr.matchName === "ADBE Vector Group") { walk(pr.property("ADBE Vectors Group")); }
-            else if (pr.matchName === "ADBE Vector Shape - Group") out.push(pr.property("ADBE Vector Shape"));
+            if (pr.matchName === "ADBE Vector Group") walk(pr.property("ADBE Vectors Group"));
+            else if (pr.matchName === "ADBE Vector Shape - Group" || pr.matchName === "ADBE Vector Shape - Rect" || pr.matchName === "ADBE Vector Shape - Ellipse") out.push(pr);
         }
     }
     walk(layer.property("ADBE Root Vectors Group"));
     return out;
-}
-function _clGroupChain(pathProp) {
-    var chain = [], p = pathProp.parentProperty;
-    while (p && p.matchName !== "ADBE Root Vectors Group") {
-        if (p.matchName === "ADBE Vector Group") chain.push(p.property("ADBE Vector Transform Group"));
-        p = p.parentProperty;
-    }
-    return chain;   // 안쪽 → 바깥쪽
-}
-function _clXformPt(pt, chain, time) {
-    var x = pt[0], y = pt[1];
-    for (var c = 0; c < chain.length; c++) {
-        var t = chain[c];
-        var a = t.property("ADBE Vector Anchor").valueAtTime(time, false), pos = t.property("ADBE Vector Position").valueAtTime(time, false);
-        var sc = t.property("ADBE Vector Scale").valueAtTime(time, false), rot = t.property("ADBE Vector Rotation").valueAtTime(time, false) * Math.PI / 180;
-        var dx = (x - a[0]) * sc[0] / 100, dy = (y - a[1]) * sc[1] / 100;
-        x = dx * Math.cos(rot) - dy * Math.sin(rot) + pos[0];
-        y = dx * Math.sin(rot) + dy * Math.cos(rot) + pos[1];
-    }
-    return [x, y];
 }
 function clonerPathFromShape(targetIndex, shapeIndex) {
     var comp = app.project ? app.project.activeItem : null;
     if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
     var target = comp.layer(targetIndex), shape = comp.layer(shapeIndex);
     if (!(shape instanceof ShapeLayer)) return err("패스 소스는 셰이프 레이어여야 합니다.");
-    var paths = _clShapePaths(shape);
-    if (paths.length === 0) return err("셰이프 레이어에 '패스'(펜 툴 경로)가 없습니다. 사각형·타원은 우클릭 > 베지어 패스로 변환 후 사용하세요.");
-    var time = comp.time;
-    var probe = comp.layers.addNull(); probe.name = "__BANG_CL_PROBE__";
-    var pp = probe.property("ADBE Transform Group").property("ADBE Position");
-    var isCentered = (target instanceof ShapeLayer) || (target instanceof TextLayer);
-    var halfW = isCentered ? target.width / 2 : 0, halfH = isCentered ? target.height / 2 : 0;
-    function toTarget(pt) {
-        // 프로브 Null 이 맨 위에 추가되어 인덱스가 밀리므로 현재 index 를 쓴다
-        pp.expression = "var p = thisComp.layer(" + shape.index + ").toComp([" + pt[0] + "," + pt[1] + "]); thisComp.layer(" + target.index + ").fromComp(p)";
-        var v = pp.valueAtTime(time, false);
-        return [v[0] + halfW, v[1] + halfH];
-    }
-    var made = 0;
-    try {
-        for (var k = 0; k < paths.length; k++) {
-            var shp = paths[k].valueAtTime(time, false), chain = _clGroupChain(paths[k]);
-            var verts = [], ins = [], outs = [];
-            for (var i = 0; i < shp.vertices.length; i++) {
-                var v = shp.vertices[i];
-                var pV = toTarget(_clXformPt(v, chain, time));
-                var pI = toTarget(_clXformPt([v[0] + shp.inTangents[i][0], v[1] + shp.inTangents[i][1]], chain, time));
-                var pO = toTarget(_clXformPt([v[0] + shp.outTangents[i][0], v[1] + shp.outTangents[i][1]], chain, time));
-                verts.push(pV); ins.push([pI[0] - pV[0], pI[1] - pV[1]]); outs.push([pO[0] - pV[0], pO[1] - pV[1]]);
-            }
-            var name = "BANG Path" + (k > 0 ? " " + (k + 1) : "");
-            var masks = target.property("ADBE Mask Parade"), m = null;
-            for (var q = 1; q <= masks.numProperties; q++) if (masks.property(q).name === name) m = masks.property(q);
-            if (m === null) { m = masks.addProperty("ADBE Mask Atom"); m.name = name; }
-            var ns = new Shape(); ns.vertices = verts; ns.inTangents = ins; ns.outTangents = outs; ns.closed = shp.closed;
-            m.property("ADBE Mask Shape").setValue(ns);
-            m.maskMode = MaskMode.NONE;
-            made++;
-        }
-    } finally { pp.expression = ""; probe.remove(); }
-    // 이펙트 설정: Layout = Path, Mask Path = 첫 BANG Path
+    if (_clShapePaths(shape).length === 0) return err("셰이프 레이어에 패스(펜 경로·사각형·타원)가 없습니다.");
     var fx = null, parade = target.property("ADBE Effect Parade");
     for (var e = 1; e <= parade.numProperties; e++) if (parade.property(e).matchName === "BANG Cloner") fx = parade.property(e);
     if (fx === null) fx = parade.addProperty("BANG Cloner");
     try { fx.property("Layout").setValue(4); } catch (e1) {}
-    var maskIdx = 0; var mp = target.property("ADBE Mask Parade");
-    for (var mi = 1; mi <= mp.numProperties; mi++) if (mp.property(mi).name === "BANG Path") maskIdx = mi;
-    try { if (maskIdx) fx.property("Mask Path").setValue(maskIdx); } catch (e2) {}
-    return ok({ paths: made, target: target.name, shape: shape.name });
+    try { fx.property("Path Layer").setValue(shape.index); } catch (e2) { return err("Path Layer 를 설정하지 못했습니다: " + e2.toString()); }
+    return ok({ paths: _clShapePaths(shape).length, target: target.name, shape: shape.name });
 }
 
 function applyNativeEffect(matchName) {
@@ -1554,10 +1495,14 @@ function applyNativeEffect(matchName) {
         if (a instanceof ShapeLayer && !hasCloner(a) && (!(b instanceof ShapeLayer) || hasCloner(b))) { shapeL = a; targetL = b; }
         else if (b instanceof ShapeLayer && !hasCloner(b) && (!(a instanceof ShapeLayer) || hasCloner(a))) { shapeL = b; targetL = a; }
         else if (a instanceof ShapeLayer && b instanceof ShapeLayer && !hasCloner(a) && !hasCloner(b)) {
-            // 둘 다 셰이프면 펜 패스가 있는 쪽이 경로 소스 (사각형·타원만 있는 쪽은 대상)
-            var pa = _clShapePaths(a).length, pb = _clShapePaths(b).length;
-            if (pa > 0 && pb === 0) { shapeL = a; targetL = b; }
-            else if (pb > 0 && pa === 0) { shapeL = b; targetL = a; }
+            // 둘 다 셰이프면: 채우기(Fill)가 없는 쪽 → 경로 소스. 둘 다 채우기가 있으면 펜 패스가 있는 쪽 → 경로 소스
+            function hasFill(L) { var found = false; (function walk(g) { for (var i = 1; i <= g.numProperties; i++) { var pr = g.property(i); if (pr.matchName === "ADBE Vector Group") walk(pr.property("ADBE Vectors Group")); else if (pr.matchName === "ADBE Vector Graphic - Fill") found = true; } })(L.property("ADBE Root Vectors Group")); return found; }
+            function hasPen(L) { var ps = _clShapePaths(L); for (var i = 0; i < ps.length; i++) if (ps[i].matchName === "ADBE Vector Shape - Group") return true; return false; }
+            var fa = hasFill(a), fb = hasFill(b);
+            if (!fa && fb) { shapeL = a; targetL = b; }
+            else if (!fb && fa) { shapeL = b; targetL = a; }
+            else if (hasPen(a) && !hasPen(b)) { shapeL = a; targetL = b; }
+            else if (hasPen(b) && !hasPen(a)) { shapeL = b; targetL = a; }
         }
         if (shapeL !== null) {
             app.beginUndoGroup("BANG Cloner Path");

@@ -492,7 +492,7 @@ function applyNative(matchName, label, onMissing) {
         setStatus(`${label}: 네이티브 플러그인(${matchName}.aex)이 설치되어 있지 않습니다 — INSTALL.txt 2-1 참고`, 'error');
         return;
       }
-      if (res.paths !== undefined) { setStatus(`Cloner Path: "${res.shape}" 의 패스 ${res.paths}개를 "${res.target}" 의 마스크(BANG Path)로 복사하고 Layout = Path 로 설정`, 'success'); return; }
+      if (res.paths !== undefined) { setStatus(`Cloner Path: "${res.target}" 에 적용 — Layout = Path, Path Layer = "${res.shape}" (패스 ${res.paths}개를 따라 배치)`, 'success'); return; }
       const parts = [];
       if (res.added) parts.push(`${res.added}개 레이어에 적용`);
       if (res.kept) parts.push(`${res.kept}개는 이미 적용됨`);

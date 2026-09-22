@@ -15,7 +15,7 @@
 #include <vector>
 
 #define BANG_CLONER_MAJOR   1
-#define BANG_CLONER_MINOR   6
+#define BANG_CLONER_MINOR   7
 #define BANG_CLONER_BUG     0
 #define BANG_CLONER_STAGE   PF_Stage_DEVELOP
 #define BANG_CLONER_BUILD   1
@@ -23,46 +23,53 @@
 // 파라미터 인덱스 (0 = 입력 레이어). 그룹(topic) 포함 — AE 의 스트림 인덱스는 이 인덱스와 1:1 (그룹 시작/끝도 스트림)
 enum {
     BC_INPUT = 0,
-    BC_MODE,            // Layout: Linear | Grid | Radial
-    BC_COUNT,           // Count (Linear·Radial)
+    BC_MODE,            // Layout: Linear | Grid | Radial | Path
+    BC_COUNT,           // Count (Linear·Radial·Path)
 
     BC_G_LINEAR,        // ── Linear ──
     BC_ORIGIN,          //   Origin Index — 원본이 몇 번째인지 (1 기준)
     BC_DIR,             //   Direction: Horizontal | Vertical
-    BC_GAP,             //   Gap — 이웃 클론 경계 사이 px, 음수 = 겹침
-    BC_OFFSET,          //   Offset — 진행 방향과 수직으로 클론당 px
+    BC_GAP,             //   Gap (px) — 이웃 클론 경계 사이, 음수 = 겹침
+    BC_OFFSET,          //   Offset (px) — 진행 방향과 수직으로 클론당
     BC_G_LINEAR_END,
 
     BC_G_GRID,          // ── Grid ──
     BC_COLS,            //   Columns
     BC_ROWS,            //   Rows
-    BC_GAP_X,           //   Gap X
-    BC_GAP_Y,           //   Gap Y
+    BC_GAP_X,           //   Gap X (px)
+    BC_GAP_Y,           //   Gap Y (px)
     BC_ORIGIN_X,        //   Origin X — 원본이 놓이는 열 (1 기준, ≤ Columns)
     BC_ORIGIN_Y,        //   Origin Y — 원본이 놓이는 행 (1 기준, ≤ Rows)
-    BC_ORIGIN_QUICK,    //   [커스텀 UI] 9방향 퀵 버튼 → Origin X/Y
+    BC_ORIGIN_QUICK,    //   [커스텀 UI] 3×3 퀵 버튼 → Origin X/Y
     BC_G_GRID_END,
 
     BC_G_RADIAL,        // ── Radial ──
-    BC_RADIUS,          //   Radius
+    BC_RADIUS,          //   Radius (px)
     BC_START_ANGLE,     //   Start Angle
-    BC_START_QUICK,     //   [커스텀 UI] 각도 퀵 버튼 → Start Angle
-    BC_SWEEP,           //   Sweep
-    BC_SWEEP_QUICK,     //   [커스텀 UI] 각도 퀵 버튼 → Sweep
+    BC_START_QUICK,     //   [커스텀 UI] 증감 프리셋 → Start Angle
+    BC_SWEEP,           //   Sweep (deg)
+    BC_SWEEP_QUICK,     //   [커스텀 UI] 증감 프리셋 → Sweep (가운데 = 360)
     BC_FACE_OUT,        //   Face Outward
     BC_CENTER_OBJ,      //   Center on Object — 켜면 원 중심 = 소스 내용 중심 (기본)
-    BC_CENTER,          //   Center — 직접 지정한 원 중심 (Center on Object 가 꺼졌을 때)
+    BC_CENTER,          //   Center — 직접 지정한 원 중심
     BC_G_RADIAL_END,
 
     BC_G_PATH,          // ── Path ──
-    BC_PATH,            //   Mask Path — 이 레이어의 마스크 패스 (PF_Param_PATH)
-    BC_PATH_ALIGN,      //   Align to Path — 클론을 진행 방향으로 회전
-    BC_PATH_OFFSET,     //   Path Offset (%) — 시작 위치를 패스 길이의 % 만큼 이동
+    BC_PATH_LAYER,      //   Path Layer — 컴프 안 셰이프 레이어 (펜 패스·사각형·타원, 그룹 변환 반영)
+    BC_PATH,            //   Mask Path — Path Layer 가 없을 때 이 레이어의 마스크 패스
+    BC_PATH_START,      //   Start (%) — 패스 위 배치 시작
+    BC_PATH_END,        //   End (%) — 패스 위 배치 끝
+    BC_PATH_OFFSET,     //   Offset (%) — 전체를 패스 방향으로 이동 (키프레임으로 애니메이션)
+    BC_PATH_SPEED,      //   Speed (%/s) — 키프레임 없이 자동으로 흐르는 속도 (음수 = 역방향)
+    BC_PATH_REVERSE,    //   Reverse — 패스 방향 반전
+    BC_PATH_LOOP,       //   Loop — 끝을 지나면 처음으로 (끄면 끝에 멈춤)
+    BC_PATH_ALIGN,      //   Align to Path — 진행 방향으로 회전
+    BC_PATH_ANGLE,      //   Align Angle (deg) — 정렬 시 더하는 각도
     BC_G_PATH_END,
 
     BC_G_STEP,          // ── Step ──
     BC_ROT_STEP,        //   Rotation Step (클론당 °)
-    BC_ROT_QUICK,       //   [커스텀 UI] 각도 퀵 버튼 → Rotation Step
+    BC_ROT_QUICK,       //   [커스텀 UI] 증감 프리셋 → Rotation Step
     BC_SCALE_STEP,      //   Scale Step (클론당 %)
     BC_OPACITY_END,     //   End Opacity (%)
     BC_G_STEP_END,
@@ -70,10 +77,12 @@ enum {
     BC_G_RANDOM,        // ── Random ──
     BC_SEED,            //   Seed
     BC_RAND_POS,        //   Random Position (px)
-    BC_RAND_ROT,        //   Random Rotation (°)
+    BC_RAND_ROT,        //   Random Rotation (deg)
     BC_RAND_SCALE,      //   Random Scale (%)
+    BC_RAND_OPACITY,    //   Random Opacity (%)
     BC_G_RANDOM_END,
 
+    BC_BAKE,            // Bake to Layers (버튼) — 클론을 실제 레이어로 굳힘 (ExtendScript 실행)
     BC_NUM_PARAMS
 };
 
