@@ -92,7 +92,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  padding: 0.64rem 0.73rem 0.73rem;
+  padding: 0.55rem 0.64rem 0.64rem;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -147,35 +147,35 @@ html, body {
 .switch[aria-checked="true"]  .switch__opt--on { color: var(--text-primary); }
 
 /* ── Tool Row ── */
-.tool-row {                             /* 2×2: 1행 [Anchor 3×3][Align 3×3] · 2행 [Null][Align to] — 폭에 따라 두 열이 같이 늘어남 */
+.tool-row {                             /* 한 줄: [Anchor 3×3][Align 3×3][Null / Align to 세로 스택] — 세로 길이 최소화 */
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 9.5rem));   /* 넓은 패널에서 셀이 과도하게 커지지 않게 상한 */
+  grid-template-columns: minmax(0, 8.6rem) minmax(0, 8.6rem) minmax(4.2rem, 5.2rem);
   justify-content: center;
-  grid-auto-rows: auto;
-  gap: 0.45rem 0.55rem;
+  gap: 0.45rem;
   align-items: stretch;
 }
+.lay-col { display: flex; flex-direction: column; gap: 0.36rem; min-width: 0; }
+.lay-col > * { flex: 1 1 0; min-height: 0; }
 
 /* ── Null Button ── */
 .null-btn {
   min-width: 0;
-  height: 2.4rem;                         /* 2행: Anchor 아래 가로형 버튼 */
   display: flex;
-  flex-direction: row;
+  flex-direction: column;                 /* 세로 스택 위 칸: 아이콘 위 라벨 */
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;                        /* 구 5 */
+  gap: 0.18rem;
   background: var(--bg-btn);
   border-radius: var(--radius-btn);
   border: none;
   color: var(--text-secondary);        /* 시인성: 구 text-disabled */
   transition: var(--tr-btn);
-  padding: 0.55rem;                    /* 구 6 */
+  padding: 0.27rem;
 }
 .null-btn:hover  { background: var(--accent-glow); color: var(--accent); }
 .null-btn:active { background: var(--accent-deep); color: var(--accent-hover); }
 .null-btn__icon  { width: 1.36rem; height: 1.36rem; flex-shrink: 0; }
-.null-btn__label { font-size: 0.86rem; font-weight: 500; white-space: nowrap; }
+.null-btn__label { font-size: 0.78rem; font-weight: 500; white-space: nowrap; }
 
 /* ── Align Card (3×3 정사각 그리드 + 우측 세로 스위치) ── */
 .al-grid {
@@ -202,27 +202,29 @@ html, body {
 .al-icon { width: 1.27rem; height: 1.27rem; flex-shrink: 0; }
 
 /* 우측 세로 스위치: Align to / Selection / (스위치) / Comp */
-.al-side {                              /* Align to 박스 — Align 아래 가로형, Null 버튼과 같은 높이 */
+.al-side {                              /* Align to 박스 — 세로 스택 아래 칸: 라벨 / 가로 트랙 / 현재 값 */
   min-width: 0;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.36rem;
-  padding: 0 0.36rem;
+  gap: 0.18rem;
+  padding: 0.18rem 0.27rem;
   background: var(--bg-btn);
   border-radius: var(--radius-btn);
-  height: 2.4rem;
   overflow: hidden;
 }
 .al-side .vswitch { flex: 0 0 auto; }
+/* 현재 선택된 값만 표시 (좁은 칸) */
+.vswitch[aria-checked="false"] .vswitch__opt--on,
+.vswitch[aria-checked="true"]  .vswitch__opt--off { display: none; }
 .al-side__label { font-size: 0.7rem; color: var(--text-disabled); letter-spacing: 0.02em; white-space: nowrap; flex: 0 0 auto; }
-.al-side.is-tight .al-side__label { display: none; }   /* 좁은 열에선 라벨 생략 (main.js 가 폭을 재서 토글, 툴팁으로 대체) */
-.vswitch {                              /* (이름은 유지) 가로 스위치: Selection ○— Comp */
+.al-side.is-tight .al-side__label { display: none; }   /* 세로가 부족하면 라벨 생략 (main.js 가 재서 토글, 툴팁으로 대체) */
+.vswitch {                              /* 가로 트랙 위, 현재 값 아래 */
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
-  gap: 0.36rem;
+  gap: 0.18rem;
   padding: 0;
   border-radius: var(--radius-btn);
   color: var(--text-secondary);

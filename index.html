@@ -12,8 +12,7 @@
   <main class="content">
 
     <!-- ═══════════ LAYOUT : Null · Anchor · Align ═══════════ -->
-    <section class="card" aria-labelledby="ttl-layout">
-      <h2 class="card__title" id="ttl-layout">Layout</h2>
+    <section class="card" aria-label="Layout">
 
       <!-- Layout row: Null · Anchor Point · Align · Align to (한 줄) -->
       <div class="tool-row">
@@ -39,7 +38,8 @@
           <button class="al-btn" data-axis="y" data-mode="max" title="Align Bottom" aria-label="Align Bottom"><svg class="al-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 13.5h13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="4" y="2.5" width="3" height="9" rx="0.8" fill="currentColor"/><rect x="9" y="5.5" width="3" height="6" rx="0.8" fill="currentColor"/></svg></button>
           <button class="al-btn" data-axis="y" data-mode="distribute" title="Distribute Vertical Spacing" aria-label="Distribute Vertical Spacing"><svg class="al-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2h12M2 14h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="4.5" y="6.25" width="7" height="3.5" rx="0.8" fill="currentColor"/></svg></button>
         </div>
-        <button class="null-btn null-btn--wide" id="btn-create-green-null">
+        <div class="lay-col">
+        <button class="null-btn" id="btn-create-green-null">
           <svg class="null-btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
             <line x1="10" y1="6" x2="10" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -55,12 +55,12 @@
             <span class="vswitch__opt vswitch__opt--on">Comp</span>
           </button>
         </div>
+        </div>
       </div>
     </section>
 
     <!-- ═══════════ COLOR : Color Picker ═══════════ -->
-    <section class="card cp-area" aria-labelledby="ttl-color">
-      <h2 class="card__title" id="ttl-color">Color</h2>
+    <section class="card cp-area" aria-label="Color">
 
       <!-- 메인 행: [정사각 피커] [미리보기+hex 오버레이] [RGB/HSB] -->
       <div class="cp-top">
@@ -120,9 +120,8 @@
              style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:none;padding:0;">
     </section>
 
-    <!-- ═══════════ TOOLS : Quote Align · Crop Precomp · Cloner · Stroke (정사각 타일) ═══════════ -->
-    <section class="card" aria-labelledby="ttl-tools">
-      <h2 class="card__title" id="ttl-tools">Tools</h2>
+    <!-- ═══════════ TOOLS : Quote Align · Crop Precomp · Cloner · Stroke · Bento Grid (정사각 타일) ═══════════ -->
+    <section class="card" aria-label="Tools">
       <div class="tile-row">
         <button class="tile" id="btn-quote-align" title="Quote Align — 인용 자막의 여는 따옴표를 본문 정렬선 밖으로 (AE 24.3+)">
           <svg class="tile__icon tile__icon--quote" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -145,84 +144,13 @@
           <svg class="tile__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><rect x="8" y="8" width="8" height="8" rx="1.5" fill="currentColor" stroke="none" opacity=".45"/></svg>
           <span class="tile__label">Stroke</span>
         </button>
+        <button class="tile" id="btn-bento" title="Bento Grid — 선택한 이미지·프리컴프 레이어를 모듈 그리드에 배치 (BentoGrid.jsx 창 열기)">
+          <svg class="tile__icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm11 0a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2zM3 14a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm8 0a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2zm7 4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2a2 2 0 0 1-2-2z"/></svg>
+          <span class="tile__label">Bento<br>Grid</span>
+        </button>
       </div>
     </section>
 
-    <!-- ═══════════ BENTO GRID (접이식) — BentoGrid.jsx v1.3.0 이식 ═══════════ -->
-    <section class="card card--collapsible" aria-labelledby="ttl-bento">
-      <button class="card__head" id="bento-toggle" type="button" aria-expanded="false" aria-controls="bento-body">
-        <h2 class="card__title" id="ttl-bento">Bento Grid</h2>
-        <span class="card__hint">선택한 이미지·프리컴프 레이어를 모듈 그리드에 배치</span>
-        <svg class="card__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <div class="card__body" id="bento-body" hidden>
-
-        <!-- 1. 크기 -->
-        <div class="bg-group">
-          <span class="bg-group__label">크기</span>
-          <div class="tm-row">
-            <label class="pf-field" title="기본 셀 크기(px). 1024/2 같은 계산식 허용">
-              <span class="pf-field__key">셀</span>
-              <input class="pf-input tm-input" id="bg-unit" type="text" value="160" aria-label="셀 크기 px">
-              <span class="pf-field__unit">px</span>
-            </label>
-            <label class="pf-field" title="타일 사이 간격(px). 계산식 허용">
-              <span class="pf-field__key">간격</span>
-              <input class="pf-input tm-input--sm" id="bg-gap" type="text" value="8" aria-label="간격 px">
-              <span class="pf-field__unit">px</span>
-            </label>
-            <label class="pf-field" title="그리드 최대 너비(px). 컴프보다 크면 컴프 너비로 제한">
-              <span class="pf-field__key">최대 너비</span>
-              <input class="pf-input tm-input" id="bg-width" type="text" value="1920" aria-label="최대 너비 px">
-              <span class="pf-field__unit">px</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 2. 배치 방식 -->
-        <div class="bg-group">
-          <span class="bg-group__label">배치</span>
-          <div class="tm-row">
-            <select class="pf-select bg-select" id="bg-fit" aria-label="이미지 맞춤" title="채우기: 타일을 가득 채우고 넘치는 부분은 자름 / 맞추기: 이미지 전체를 보존">
-              <option value="Cover">채우기 (Cover)</option>
-              <option value="Contain">맞추기 (Contain)</option>
-            </select>
-            <select class="pf-select bg-select" id="bg-variety" aria-label="타일 크기 변화" title="큰 타일 허용 범위: 균형 2×2 / 대담 3×3 / 과감 4×4">
-              <option value="Balanced">균형 · 2×2</option>
-              <option value="Bold">대담 · 3×3</option>
-              <option value="Wild">과감 · 4×4</option>
-            </select>
-            <select class="pf-select bg-select" id="bg-style" aria-label="패킹 스타일" title="정돈: 규칙적 / 맞물림: 권장 / 느슨한 모자이크: 자유로운 배치">
-              <option value="Compact">정돈</option>
-              <option value="Interlocking" selected>맞물림 (권장)</option>
-              <option value="Loose Mosaic">느슨한 모자이크</option>
-            </select>
-          </div>
-          <div class="tm-row">
-            <button class="pf-toggle tm-toggle bg-opt" id="bg-crop" type="button" aria-pressed="true" title="채우기 모드에서 넘치는 부분을 레이어 마스크(__BENTO_GRID_CROP__)로 자름">크롭 마스크</button>
-            <button class="pf-toggle tm-toggle bg-opt" id="bg-center" type="button" aria-pressed="true" title="그리드를 컴프 중앙에 배치">컴프 중앙</button>
-            <button class="pf-toggle tm-toggle bg-opt" id="bg-mix" type="button" aria-pressed="true" title="가로형·세로형 타일 프레임을 섞음 (정돈 스타일에선 무시)">가로·세로 혼합</button>
-          </div>
-        </div>
-
-        <!-- 3. 실행 -->
-        <div class="tm-row bg-actions">
-          <button class="qa-btn tm-go" id="btn-bento-repack" title="배치 — 같은 설정이면 항상 같은 결과. 크롭 마스크도 재계산">
-            <!-- Phosphor Icons `grid-four` (regular) -->
-            <svg class="qa-btn__icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M200 40H56a16 16 0 0 0-16 16v144a16 16 0 0 0 16 16h144a16 16 0 0 0 16-16V56a16 16 0 0 0-16-16m0 80h-64V56h64Zm-80-64v64H56V56Zm-64 80h64v64H56Zm144 64h-64v-64h64Z"/>
-            </svg>
-            <span class="qa-btn__label">배치</span>
-          </button>
-          <button class="qa-btn tm-go" id="btn-bento-random" title="무작위 — 큰 타일의 크기·순서를 바꿔 다시 배치">
-            <!-- Phosphor Icons `shuffle-simple` (regular) -->
-            <svg class="qa-btn__icon" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M237.66 178.34a8 8 0 0 1 0 11.32l-24 24a8 8 0 0 1-11.32-11.32L212.69 192H200.94a72.12 72.12 0 0 1-58.59-30.15l-41.72-58.4A56.1 56.1 0 0 0 55.06 80H32a8 8 0 0 1 0-16h23.06a72.12 72.12 0 0 1 58.59 30.15l41.72 58.4A56.1 56.1 0 0 0 200.94 176h11.75l-10.35-10.34a8 8 0 0 1 11.32-11.32ZM143 107a8 8 0 0 0 11.16-1.86l1.2-1.67A56.1 56.1 0 0 1 200.94 80h11.75l-10.35 10.34a8 8 0 0 0 11.32 11.32l24-24a8 8 0 0 0 0-11.32l-24-24a8 8 0 0 0-11.32 11.32L212.69 64h-11.75a72.12 72.12 0 0 0-58.59 30.15l-1.2 1.67A8 8 0 0 0 143 107m-30 42a8 8 0 0 0-11.16 1.86l-1.2 1.67A56.1 56.1 0 0 1 55.06 176H32a8 8 0 0 0 0 16h23.06a72.12 72.12 0 0 0 58.59-30.15l1.2-1.67A8 8 0 0 0 113 149"/></svg>
-            <span class="qa-btn__label">무작위</span>
-          </button>
-          <button class="pf-toggle tm-toggle" id="btn-bento-clear" type="button" title="선택한 레이어의 Bento 크롭 마스크만 제거 (크기·위치는 유지)">마스크 제거</button>
-        </div>
-      </div>
-    </section>
 
 
   </main>

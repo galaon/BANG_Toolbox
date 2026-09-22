@@ -3,6 +3,14 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.4] — 2026-09-22
+
+### Changed
+- **패널 세로 압축** — Layout 을 한 줄 `[Anchor 3×3] [Align 3×3] [Null / Align to 세로 스택]` 으로, 카드 제목(LAYOUT · COLOR · TOOLS) 제거, Align to 는 라벨·가로 트랙·현재 값만 표시(좁으면 라벨 생략).
+- **Bento Grid** — 접이식 카드를 없애고 Tools 의 정사각 타일로. 클릭하면 동봉한 **원본 `BentoGrid.jsx` 팔레트 창**이 열립니다(이미 열려 있으면 앞으로).
+- **Align** — 선택에 3D 레이어가 없으면 측정용 프로브를 2D 로 만들어 3D 축 표시가 스쳐 지나가지 않음(있을 때만 3D 프로브).
+- **BANG Cloner v1.5** — 새로 적용하면 `Linear` 만 펼쳐지고 `Grid`·`Radial`·`Step`·`Random` 은 접힌 채 시작. Step 글리프 `↻` → `∆`.
+
 ## [1.3.3] — 2026-09-22
 
 ### Changed

@@ -400,7 +400,7 @@ document.getElementById('btn-precomp-fit').addEventListener('click', () => {
   if (!side) return;
   const fit = () => {
     side.classList.remove('is-tight');
-    if (side.scrollWidth > side.clientWidth + 1) side.classList.add('is-tight');
+    if (side.scrollWidth > side.clientWidth + 1 || side.scrollHeight > side.clientHeight + 1) side.classList.add('is-tight');
   };
   if (window.ResizeObserver) new ResizeObserver(fit).observe(side);
   window.addEventListener('resize', fit);
@@ -448,14 +448,15 @@ document.querySelectorAll('.al-btn').forEach(btn => {
 //   · 이펙트 없음 → 이펙트 적용 + 복제   · 있음 → '복제 개수'/'배치 모드'로 갱신
 //   · '래스터라이즈' 체크 → 클론을 독립 레이어로 굳힘   · '복제 개수' 1 → 클론 제거
 
-function clonerFfxPath() {
+// 확장 폴더 안 파일의 절대 경로 (CEP 가 file:///C:/... URL 형태로 돌려주는 경우가 있어 일반 경로로 정규화)
+function extPath(rel) {
   try {
-    // CEP 가 file:///C:/... URL 형태로 돌려주는 경우가 있어 일반 경로로 정규화
     let ext = csInterface.getSystemPath(SystemPath.EXTENSION) || '';
     if (/^file:/i.test(ext)) ext = decodeURIComponent(ext.replace(/^file:\/{2,3}/i, ''));
-    return (ext + '/jsx/BANG_Cloner.ffx').replace(/\\/g, '/');
+    return (ext + '/' + rel).replace(/\\/g, '/');
   } catch (e) { return ''; }
 }
+function clonerFfxPath() { return extPath('jsx/BANG_Cloner.ffx'); }
 
 // 자동 갱신: 소스/클론 선택 중 '복제 개수' ≠ 현재 클론 수 이거나 '래스터라이즈' 체크 → 값이 1초간 안정되면 applyCloner
 (function initClonerAuto() {
@@ -527,41 +528,12 @@ document.getElementById('btn-stroke').addEventListener('click', () => applyNativ
 
 // ── Bento Grid (BentoGrid.jsx 이식) ───────────────────────────
 
-(function initBento() {
-  const $ = id => document.getElementById(id);
-  // 접이식 카드
-  const head = $('bento-toggle'), body = $('bento-body');
-  const setOpen = (open) => { head.setAttribute('aria-expanded', open ? 'true' : 'false'); body.hidden = !open; try { localStorage.setItem('bang-bento-open', open ? '1' : '0'); } catch (e) {} };
-  head.addEventListener('click', () => setOpen(head.getAttribute('aria-expanded') !== 'true'));
-  try { setOpen(localStorage.getItem('bang-bento-open') === '1'); } catch (e) {}
-  ['bg-crop', 'bg-center', 'bg-mix'].forEach(id => {
-    const b = $(id);
-    b.addEventListener('click', () => b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true' ? 'true' : 'false'));
+// Bento Grid: 동봉한 원본 BentoGrid.jsx 의 ScriptUI 팔레트를 연다 (이미 떠 있으면 앞으로)
+document.getElementById('btn-bento').addEventListener('click', () => {
+  const path = extPath('jsx/BentoGrid.jsx');
+  setStatus('Bento Grid...');
+  evalScript(`(function(){ try { $.evalFile(new File(${JSON.stringify(path)})); return "ok"; } catch (e) { return "ERR " + e.toString(); } })()`, (r) => {
+    if (typeof r === 'string' && r.indexOf('ERR') === 0) setStatus('Bento Grid: ' + r.slice(4), 'error');
+    else setStatus('Bento Grid 창을 열었습니다', 'success');
   });
-  const settings = () => ({
-    unit: $('bg-unit').value, gap: $('bg-gap').value, width: $('bg-width').value,
-    fit: $('bg-fit').value, variety: $('bg-variety').value, style: $('bg-style').value,
-    crop: $('bg-crop').getAttribute('aria-pressed') === 'true',
-    center: $('bg-center').getAttribute('aria-pressed') === 'true',
-    mix: $('bg-mix').getAttribute('aria-pressed') === 'true'
-  });
-  const report = (label) => (result) => {
-    try {
-      const r = JSON.parse(result);
-      if (!r.success) { setStatus('Error: ' + r.error, 'error'); return; }
-      setStatus(`${label}: ${r.status || 'done'}`, 'success');
-      if (r.detail) console.log('Bento detail:\n' + r.detail);
-      if (r.messages && r.messages.length) console.warn('Bento messages:', r.messages);
-    } catch (e) { setStatus('Unexpected response', 'error'); }
-  };
-  const run = (randomize) => {
-    setStatus(randomize ? 'Bento: randomizing...' : 'Bento: repacking...');
-    evalScript(`bentoGrid(${JSON.stringify(JSON.stringify(settings()))}, ${randomize})`, report(randomize ? 'Bento 무작위' : 'Bento 배치'));
-  };
-  $('btn-bento-repack').addEventListener('click', () => run(false));
-  $('btn-bento-random').addEventListener('click', () => run(true));
-  $('btn-bento-clear').addEventListener('click', () => {
-    setStatus('Bento: clearing masks...');
-    evalScript('bentoClearMasks()', report('Bento 마스크 제거'));
-  });
-})();
+});

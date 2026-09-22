@@ -80,6 +80,8 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     // (PF_Param_NO_DATA 는 숨긴 그룹에서도 행이 남아 체크박스 데이터형 + 커스텀 컨트롤로 만든다. 값은 쓰지 않음, 키프레임 불가)
     #define QUICK_ROW(NAME, ID, ROWS) do { AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_CANNOT_TIME_VARY; def.ui_flags = PF_PUI_CONTROL; def.ui_width = 300; def.ui_height = kQuickBtnH * (ROWS) + kQuickBtnGap * ((ROWS) - 1) + 2; PF_ADD_CHECKBOX(NAME, "", FALSE, 0, ID); } while (0)
     #define TOPIC(NAME, ID)  do { AEFX_CLR_STRUCT(def); PF_ADD_TOPIC(NAME, ID); } while (0)
+    // 처음 적용 시 Linear 만 펼치고 나머지는 접힌 채 시작 (PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG 가 flags 를 존중)
+    #define TOPIC_CLOSED(NAME, ID) do { AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_START_COLLAPSED; PF_ADD_TOPIC(NAME, ID); } while (0)
     #define TOPIC_END(ID)    do { AEFX_CLR_STRUCT(def); PF_END_TOPIC(ID); } while (0)
 
     AEFX_CLR_STRUCT(def);
@@ -98,7 +100,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_FLOAT_SLIDERX("Offset (px)", -10000, 10000, -500, 500, 0, PF_Precision_TENTHS, 0, 0, BC_OFFSET);
     TOPIC_END(BC_G_LINEAR_END);
 
-    TOPIC("\xE2\x96\xA6 Grid", BC_G_GRID);
+    TOPIC_CLOSED("\xE2\x96\xA6 Grid", BC_G_GRID);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
     PF_ADD_SLIDER("Columns", 1, 100, 1, 20, 3, BC_COLS);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
@@ -114,7 +116,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     QUICK_ROW("Origin Preset", BC_ORIGIN_QUICK, 3);
     TOPIC_END(BC_G_GRID_END);
 
-    TOPIC("\xE2\x97\x8E Radial", BC_G_RADIAL);
+    TOPIC_CLOSED("\xE2\x97\x8E Radial", BC_G_RADIAL);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Radius (px)", -10000, 10000, 0, 1000, 200, PF_Precision_TENTHS, 0, 0, BC_RADIUS);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;   // 다이얼 접힘 (숨긴 그룹의 다이얼이 ECW 에 남는 현상 방지)
@@ -129,7 +131,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_POINT("Center", 50, 50, 0, BC_CENTER);
     TOPIC_END(BC_G_RADIAL_END);
 
-    TOPIC("\xE2\x86\xBB Step", BC_G_STEP);
+    TOPIC_CLOSED("\xE2\x88\x86 Step", BC_G_STEP);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
     PF_ADD_ANGLE("Rotation Step", 0, BC_ROT_STEP);
     QUICK_ROW("Nudge", BC_ROT_QUICK, 1);
@@ -139,7 +141,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_FLOAT_SLIDERX("End Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, 0, BC_OPACITY_END);
     TOPIC_END(BC_G_STEP_END);
 
-    TOPIC("\xE2\x9A\x84 Random", BC_G_RANDOM);
+    TOPIC_CLOSED("\xE2\x9A\x84 Random", BC_G_RANDOM);
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Seed", 0, 9999, 0, 100, 0, BC_SEED);
     AEFX_CLR_STRUCT(def);
@@ -151,6 +153,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     TOPIC_END(BC_G_RANDOM_END);
     #undef QUICK_ROW
     #undef TOPIC
+    #undef TOPIC_CLOSED
     #undef TOPIC_END
 
     // 커스텀 UI(ECW 이벤트) 등록
