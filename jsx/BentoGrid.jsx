@@ -190,7 +190,7 @@
         var minimum = allowZero ? 0 : EPSILON;
 
         if (value < minimum) {
-            throw new Error(label + (allowZero ? " must be 0 or greater." : " must be greater than 0."));
+            throw new Error(label + (allowZero ? " 값은 0 이상이어야 합니다." : " 값은 0보다 커야 합니다."));
         }
         return value;
     }
@@ -2292,11 +2292,13 @@
     }
 
     function readUISettings(ui) {
-        var fitText = ui.fitMode.selection ? ui.fitMode.selection.text : "Cover";
-        var varietyText = ui.tileVariety.selection ?
-            ui.tileVariety.selection.text : "Balanced";
-        var styleText = ui.packingStyle.selection ?
-            ui.packingStyle.selection.text : "Interlocking";
+        // BANG_Toolbox 한글 UI: 드롭다운은 인덱스로 판별 (표시 텍스트는 한글)
+        var fitIdx = ui.fitMode.selection ? ui.fitMode.selection.index : 0;
+        var varietyIdx = ui.tileVariety.selection ? ui.tileVariety.selection.index : 0;
+        var styleIdx = ui.packingStyle.selection ? ui.packingStyle.selection.index : 1;
+        var fitText = fitIdx === 1 ? "Contain" : "Cover";
+        var varietyText = varietyIdx === 2 ? "Wild" : (varietyIdx === 1 ? "Bold" : "Balanced");
+        var styleText = styleIdx === 2 ? "Loose Mosaic" : (styleIdx === 0 ? "Compact" : "Interlocking");
         var unitExpression = trimText(ui.unit.text);
         var gapExpression = trimText(ui.gap.text);
         var widthExpression = trimText(ui.layoutWidth.text);
@@ -2306,9 +2308,9 @@
             (styleText.indexOf("Compact") === 0 ? "Compact" : "Interlocking");
 
         return {
-            unit: parsePositiveNumber(unitExpression, "Unit Size", false),
-            gap: parsePositiveNumber(gapExpression, "Gap", true),
-            layoutWidth: parsePositiveNumber(widthExpression, "Layout Width", false),
+            unit: parsePositiveNumber(unitExpression, "셀 크기", false),
+            gap: parsePositiveNumber(gapExpression, "간격", true),
+            layoutWidth: parsePositiveNumber(widthExpression, "최대 너비", false),
             unitExpression: unitExpression,
             gapExpression: gapExpression,
             layoutWidthExpression: widthExpression,
@@ -2353,7 +2355,7 @@
         var i;
 
         if (!(comp instanceof CompItem)) {
-            alert("Open a composition, select bitmap/footage layers, and try again.", SCRIPT_NAME);
+            alert("컴프를 열고 이미지·푸티지·프리컴프 레이어를 선택한 뒤 다시 실행하세요.", SCRIPT_NAME);
             return;
         }
 
@@ -2366,18 +2368,18 @@
 
         selectedLayers = comp.selectedLayers;
         if (!selectedLayers || selectedLayers.length === 0) {
-            alert("Select at least one bitmap/footage layer in the active composition.", SCRIPT_NAME);
+            alert("활성 컴프에서 이미지·푸티지·프리컴프 레이어를 하나 이상 선택하세요.", SCRIPT_NAME);
             return;
         }
 
         effectiveWidth = Math.min(settings.layoutWidth, Number(comp.width));
         if (settings.layoutWidth > comp.width + EPSILON) {
-            warnings.push("Layout Width was capped to the composition width (" + comp.width + " px)." );
+            warnings.push("최대 너비가 컴프 너비(" + comp.width + " px)로 제한되었습니다.");
         }
         columns = Math.floor((effectiveWidth + settings.gap) / (settings.unit + settings.gap));
         if (columns < 1) {
             columns = 1;
-            warnings.push("Unit Size is wider than the available layout width; a one-column grid was used.");
+            warnings.push("셀 크기가 최대 너비보다 커서 1열 그리드로 배치했습니다.");
         }
         if (columns > MAX_COLUMNS) {
             columns = MAX_COLUMNS;
@@ -2389,7 +2391,7 @@
         items = collection.items;
         if (items.length === 0) {
             detailText = makeDetailText(collection.skipped, failed, warnings);
-            alert("No supported layers can be arranged.\n\n" + detailText, SCRIPT_NAME);
+            alert("배치할 수 있는 레이어가 없습니다.\n\n" + detailText, SCRIPT_NAME);
             return;
         }
 
@@ -2416,7 +2418,7 @@
                 items, columns, seed, randomize, settings.packingStyle
             );
         } catch (packingError) {
-            alert("Packing failed: " + packingError.message, SCRIPT_NAME);
+            alert("배치 실패: " + packingError.message, SCRIPT_NAME);
             return;
         }
 
@@ -2471,23 +2473,23 @@
 
         if (existingMaskInteractions > 0) {
             warnings.push(existingMaskInteractions +
-                " layer(s) already had masks; the Bento crop uses Intersect mode on those layers.");
+                "개 레이어에 이미 마스크가 있어 Bento 크롭 마스크를 Intersect 모드로 추가했습니다.");
         }
         if (failed.length > 0) {
-            warnings.push("Failed layer slots remain empty; use Undo to revert the complete run if needed.");
+            warnings.push("실패한 레이어의 자리는 비어 있습니다. 전체를 되돌리려면 실행 취소(Ctrl+Z)하세요.");
         }
 
         fillPercent = packed.usedRows > 0 && usedColumns > 0 ?
             Math.round((successfulCells / (packed.usedRows * usedColumns)) * 100) : 100;
-        ui.status.text = successes + " arranged · " + usedColumns + " col × " +
-            packed.usedRows + " row · " + fillPercent + "% grid fill" +
+        ui.status.text = successes + "개 배치 · " + usedColumns + "열 × " +
+            packed.usedRows + "행 · 채움 " + fillPercent + "%" +
             (collection.skipped.length + failed.length > 0 ?
-                " · " + (collection.skipped.length + failed.length) + " skipped/failed" : "");
+                " · 건너뜀/실패 " + (collection.skipped.length + failed.length) + "개" : "");
         detailText = makeDetailText(collection.skipped, failed, warnings);
         ui.status.helpTip = detailText.length > 0 ? detailText :
-            "All selected supported layers were arranged successfully.";
+            "선택한 레이어를 모두 배치했습니다.";
         if (failed.length > 0) {
-            alert(failed.length + " layer(s) could not be completed.\n\n" +
+            alert(failed.length + "개 레이어를 완료하지 못했습니다.\n\n" +
                 makeDetailText([], failed, warnings), SCRIPT_NAME);
         }
     }
@@ -2512,20 +2514,20 @@
         var layerMatchCount;
         var hasRemovable;
         var removedFromLayer;
-        var scopeLabel = deleteAll ? "mask" : "Bento mask";
+        var scopeLabel = deleteAll ? "마스크" : "Bento 마스크";
         var confirmationText;
         var detailText;
         var i;
         var j;
 
         if (!(comp instanceof CompItem)) {
-            alert("Open a composition, select layers, and try again.", SCRIPT_NAME);
+            alert("컴프를 열고 레이어를 선택한 뒤 다시 실행하세요.", SCRIPT_NAME);
             return;
         }
 
         selectedLayers = comp.selectedLayers;
         if (!selectedLayers || selectedLayers.length === 0) {
-            alert("Select at least one layer whose masks should be removed.",
+            alert("마스크를 제거할 레이어를 하나 이상 선택하세요.",
                 SCRIPT_NAME);
             return;
         }
@@ -2582,44 +2584,34 @@
 
         if (matchingCount === 0) {
             ui.status.text = deleteAll ?
-                "No masks found on the selected layers." :
-                "No Bento crop masks found on the selected layers.";
+                "선택한 레이어에 마스크가 없습니다." :
+                "선택한 레이어에 Bento 크롭 마스크가 없습니다.";
             ui.status.helpTip = deleteAll ?
-                "No masks were changed." :
-                "Only masks named " + CROP_MASK_NAME + " are removed.";
+                "변경된 마스크가 없습니다." :
+                "이름이 " + CROP_MASK_NAME + " 인 마스크만 제거합니다.";
             return;
         }
 
         if (removableCount === 0) {
-            ui.status.text = "No removable " + scopeLabel +
-                (matchingCount === 1 ? "" : "s") + " · " +
-                lockedCount + " locked";
+            ui.status.text = "제거할 수 있는 " + scopeLabel + "가 없습니다 · 잠김 " + lockedCount + "개";
             detailText = makeDetailText(skipped, failed, []);
             ui.status.helpTip = detailText.length > 0 ? detailText :
-                "Locked masks and masks on locked layers were preserved.";
-            alert("No selected " + scopeLabel +
-                (matchingCount === 1 ? " could" : "s could") +
-                " be removed.\n\n" + detailText, SCRIPT_NAME);
+                "잠긴 마스크와 잠긴 레이어의 마스크는 그대로 두었습니다.";
+            alert("선택한 " + scopeLabel + "를 제거할 수 없습니다.\n\n" + detailText, SCRIPT_NAME);
             return;
         }
 
         if (deleteAll) {
-            confirmationText = "Delete ALL unlocked masks from the selected layers?\n\n" +
-                removableCount + " mask" + (removableCount === 1 ? "" : "s") +
-                " on " + targets.length + " layer" +
-                (targets.length === 1 ? "" : "s") + " will be deleted.";
+            confirmationText = "선택한 레이어의 잠기지 않은 마스크를 전부 삭제할까요?\n\n" +
+                targets.length + "개 레이어의 마스크 " + removableCount + "개가 삭제됩니다.";
             if (lockedCount > 0) {
-                confirmationText += "\n" + lockedCount +
-                    " matching mask" + (lockedCount === 1 ? " is" : "s are") +
-                    " locked or on locked layers and will be skipped.";
+                confirmationText += "\n잠겨 있거나 잠긴 레이어에 있는 마스크 " + lockedCount + "개는 건너뜁니다.";
             }
-            confirmationText += "\n\nThis includes user-created, animated, " +
-                "expression-driven, disabled, and Bento masks. Mask indices and " +
-                "expressions that reference them may change. Scale and Position " +
-                "remain unchanged. Immediate Undo restores this operation.\n\nContinue?";
+            confirmationText += "\n\n직접 만든 마스크, 애니메이션·표현식이 있는 마스크, 꺼진 마스크, Bento 마스크가 모두 포함됩니다. " +
+                "마스크 번호와 그것을 참조하는 표현식이 달라질 수 있습니다. 크기·위치는 바뀌지 않으며 바로 실행 취소(Ctrl+Z)로 되돌릴 수 있습니다.\n\n계속할까요?";
             if (!confirm(confirmationText, true, SCRIPT_NAME)) {
-                ui.status.text = "All-mask deletion cancelled.";
-                ui.status.helpTip = "No masks were changed.";
+                ui.status.text = "마스크 전체 삭제를 취소했습니다.";
+                ui.status.helpTip = "변경된 마스크가 없습니다.";
                 return;
             }
         }
@@ -2663,18 +2655,15 @@
             app.endUndoGroup();
         }
 
-        ui.status.text = removed + " " + scopeLabel +
-            (removed === 1 ? "" : "s") +
-            " removed from " + changedLayers + " layer" +
-            (changedLayers === 1 ? "" : "s") +
-            (lockedCount > 0 ? " · " + lockedCount + " locked" : "") +
-            (failed.length > 0 ? " · " + failed.length + " failed" : "");
+        ui.status.text = changedLayers + "개 레이어에서 " + scopeLabel + " " + removed + "개 제거" +
+            (lockedCount > 0 ? " · 잠김 " + lockedCount + "개" : "") +
+            (failed.length > 0 ? " · 실패 " + failed.length + "개" : "");
         detailText = makeDetailText(skipped, failed, []);
         ui.status.helpTip = detailText.length > 0 ? detailText :
-            "Scale and Position were left unchanged. Use Undo to restore the masks.";
+            "크기·위치는 바뀌지 않았습니다. 실행 취소(Ctrl+Z)로 마스크를 되돌릴 수 있습니다.";
         if (failed.length > 0 || skipped.length > 0) {
-            alert((deleteAll ? "All-mask deletion" : "Bento mask cleanup") +
-                " completed with exceptions.\n\n" + detailText,
+            alert((deleteAll ? "마스크 전체 삭제" : "Bento 마스크 제거") +
+                "를 예외와 함께 마쳤습니다.\n\n" + detailText,
                 SCRIPT_NAME);
         }
     }
@@ -2700,24 +2689,36 @@
         return field;
     }
 
+    // ── 강조 버튼 (ScriptUI 버튼은 색을 못 바꾸므로 iconbutton 에 직접 그림) ──
+    function addAccentButton(parent, text, helpTip) {
+        var btn = parent.add("iconbutton", undefined, undefined, {style: "toolbutton"});
+        btn.preferredSize = [-1, 34];
+        btn.helpTip = helpTip;
+        btn.text = text;
+        btn.onDraw = function () {
+            var g = this.graphics;
+            var w = this.size.width, h = this.size.height;
+            var fill = g.newBrush(g.BrushType.SOLID_COLOR, this.__hover ? [0.22, 0.66, 1, 1] : [0.0, 0.6, 1, 1]);
+            g.newPath();
+            g.rectPath(0, 0, w, h);
+            g.fillPath(fill);
+            var font = ScriptUI.newFont(g.font.name, "BOLD", 13);
+            var tw = g.measureString(this.text, font)[0];
+            var th = g.measureString(this.text, font)[1];
+            g.drawString(this.text, g.newPen(g.PenType.SOLID_COLOR, [1, 1, 1, 1], 1), (w - tw) / 2, (h - th) / 2, font);
+        };
+        btn.addEventListener("mouseover", function () { this.__hover = true; this.notify("onDraw"); });
+        btn.addEventListener("mouseout", function () { this.__hover = false; this.notify("onDraw"); });
+        return btn;
+    }
+
     function buildUI(owner) {
         var palette = owner instanceof Panel ? owner :
             new Window("palette", SCRIPT_NAME, undefined, {resizeable: true});
-        var header;
-        var headerText;
-        var layoutPanel;
-        var fitGroup;
-        var fitLabel;
-        var varietyGroup;
-        var varietyLabel;
-        var styleGroup;
-        var styleLabel;
-        var optionPanel;
-        var buttons;
+        var header, guide, sizePanel, layoutPanel, optionPanel, buttons, maskRow;
+        var g, label;
         var ui = {};
-        var savedFit;
-        var savedVariety;
-        var savedStyle;
+        var savedFit, savedVariety, savedStyle;
 
         if (!palette) {
             return null;
@@ -2726,106 +2727,109 @@
         palette.orientation = "column";
         palette.alignChildren = ["fill", "top"];
         palette.spacing = 6;
-        palette.margins = 8;
+        palette.margins = 10;
+        try { palette.graphics.backgroundColor = palette.graphics.newBrush(palette.graphics.BrushType.SOLID_COLOR, [0.16, 0.16, 0.17, 1]); } catch (eBg) {}
 
+        // 제목
         header = palette.add("group");
         header.orientation = "row";
         header.alignChildren = ["fill", "center"];
-        headerText = header.add("statictext", undefined,
-            "Modular packing for selected 2D image layers");
-        headerText.alignment = ["fill", "center"];
-        headerText.helpTip = "Builds compact or interlocking modular layouts from 1×1 up to 4×4.";
+        ui.title = header.add("statictext", undefined, "Bento Grid — 선택한 이미지 레이어를 벤토 그리드로 배치");
+        ui.title.alignment = ["fill", "center"];
         ui.version = header.add("statictext", undefined, "v" + VERSION);
         ui.version.alignment = ["right", "center"];
 
-        layoutPanel = palette.add("panel", undefined, "Layout");
+        // 사용 설명
+        guide = palette.add("panel", undefined, "사용법");
+        guide.orientation = "column";
+        guide.alignChildren = ["fill", "top"];
+        guide.margins = [10, 12, 10, 8];
+        ui.guide = guide.add("statictext", undefined,
+            "1. 컴프에서 배치할 이미지·푸티지·프리컴프 레이어를 선택합니다.\n" +
+            "2. 셀 크기·간격·최대 너비를 정하고 [Bento Grid 적용]을 누릅니다.\n" +
+            "3. 결과가 마음에 들지 않으면 [무작위 배치]로 큰 타일의 크기와 순서를 바꿔 다시 배치합니다.\n" +
+            "· 크기·위치는 레이어의 Scale/Position 으로, 채우기 크롭은 " + CROP_MASK_NAME + " 마스크로 적용됩니다.\n" +
+            "· 되돌리려면 실행 취소(Ctrl+Z), 마스크만 지우려면 [Bento 마스크 제거].",
+            {multiline: true});
+        ui.guide.preferredSize.height = 96;
+
+        // 크기
+        sizePanel = palette.add("panel", undefined, "크기");
+        sizePanel.orientation = "column";
+        sizePanel.alignChildren = ["fill", "top"];
+        sizePanel.spacing = 4;
+        sizePanel.margins = [10, 12, 10, 8];
+        ui.unit = addLabeledField(sizePanel, "셀 크기 (px)", getSavedSetting("unit", "160"),
+            "타일 한 칸의 기준 크기(컴프 픽셀). 1024/2 같은 계산식도 됩니다.");
+        ui.gap = addLabeledField(sizePanel, "간격 (px)", getSavedSetting("gap", "8"),
+            "이웃한 타일 사이 여백. (24-8)/2 같은 계산식도 됩니다.");
+        ui.layoutWidth = addLabeledField(sizePanel, "최대 너비 (px)", getSavedSetting("width", "1920"),
+            "그리드 전체의 최대 가로 폭. 컴프보다 크면 컴프 너비로 제한됩니다.");
+
+        // 배치
+        layoutPanel = palette.add("panel", undefined, "배치");
         layoutPanel.orientation = "column";
         layoutPanel.alignChildren = ["fill", "top"];
         layoutPanel.spacing = 4;
-        layoutPanel.margins = 8;
-        ui.unit = addLabeledField(
-            layoutPanel, "Unit Size", getSavedSetting("unit", "160"),
-            "Base cell size in composition pixels. Calculations such as 1024/2 are allowed."
-        );
-        ui.gap = addLabeledField(
-            layoutPanel, "Gap", getSavedSetting("gap", "8"),
-            "Space between adjacent tiles. Calculations such as (24-8)/2 are allowed."
-        );
-        ui.layoutWidth = addLabeledField(
-            layoutPanel, "Layout Width", getSavedSetting("width", "1920"),
-            "Maximum grid width. Calculations are allowed; values wider than the comp are capped."
-        );
+        layoutPanel.margins = [10, 12, 10, 8];
 
-        fitGroup = layoutPanel.add("group");
-        fitGroup.orientation = "row";
-        fitGroup.alignChildren = ["left", "center"];
-        fitLabel = fitGroup.add("statictext", undefined, "Fit Mode");
-        fitLabel.preferredSize.width = 105;
-        ui.fitMode = fitGroup.add("dropdownlist", undefined, ["Cover", "Contain"]);
+        g = layoutPanel.add("group"); g.orientation = "row"; g.alignChildren = ["left", "center"];
+        label = g.add("statictext", undefined, "채우기"); label.preferredSize.width = 105;
+        ui.fitMode = g.add("dropdownlist", undefined, ["채우기 (Cover) — 타일을 가득 채우고 남는 부분은 잘라냄", "맞추기 (Contain) — 이미지 전체가 보이게"]);
         savedFit = getSavedSetting("fit", "Cover");
         ui.fitMode.selection = savedFit === "Contain" ? 1 : 0;
-        ui.fitMode.helpTip = "Cover fills and crops each tile. Contain preserves the whole image.";
+        ui.fitMode.helpTip = "Cover 는 타일을 꽉 채우고 넘치는 부분을 마스크로 잘라냅니다. Contain 은 이미지를 자르지 않습니다.";
 
-        varietyGroup = layoutPanel.add("group");
-        varietyGroup.orientation = "row";
-        varietyGroup.alignChildren = ["left", "center"];
-        varietyLabel = varietyGroup.add("statictext", undefined, "Tile Variety");
-        varietyLabel.preferredSize.width = 105;
-        ui.tileVariety = varietyGroup.add("dropdownlist", undefined, [
-            "Balanced · 2×2", "Bold · 3×3", "Wild · 4×4"
-        ]);
+        g = layoutPanel.add("group"); g.orientation = "row"; g.alignChildren = ["left", "center"];
+        label = g.add("statictext", undefined, "타일 변화"); label.preferredSize.width = 105;
+        ui.tileVariety = g.add("dropdownlist", undefined, ["균형 — 최대 2×2", "대담 — 최대 3×3", "과감 — 최대 4×4"]);
         savedVariety = getSavedSetting("variety", "Balanced");
-        ui.tileVariety.selection = savedVariety === "Wild" ? 2 :
-            (savedVariety === "Bold" ? 1 : 0);
-        ui.tileVariety.helpTip = "Balanced keeps the original look. Bold and Wild allow a few larger feature tiles.";
+        ui.tileVariety.selection = savedVariety === "Wild" ? 2 : (savedVariety === "Bold" ? 1 : 0);
+        ui.tileVariety.helpTip = "큰 타일을 얼마나 허용할지. 균형은 고르게, 대담·과감은 몇 개의 큰 대표 타일을 만듭니다.";
 
-        styleGroup = layoutPanel.add("group");
-        styleGroup.orientation = "row";
-        styleGroup.alignChildren = ["left", "center"];
-        styleLabel = styleGroup.add("statictext", undefined, "Packing Style");
-        styleLabel.preferredSize.width = 105;
-        ui.packingStyle = styleGroup.add("dropdownlist", undefined, [
-            "Compact", "Interlocking · Recommended", "Loose Mosaic"
-        ]);
+        g = layoutPanel.add("group"); g.orientation = "row"; g.alignChildren = ["left", "center"];
+        label = g.add("statictext", undefined, "채우는 방식"); label.preferredSize.width = 105;
+        ui.packingStyle = g.add("dropdownlist", undefined, ["정돈 — 규칙적으로 빈틈없이", "맞물림 (권장) — 크기를 섞어 긴 이음새를 끊음", "느슨한 모자이크 — 더 자유롭게 흩어 배치"]);
         savedStyle = getSavedSetting("packingStyle", "Interlocking");
-        ui.packingStyle.selection = savedStyle === "Loose Mosaic" ? 2 :
-            (savedStyle === "Compact" ? 0 : 1);
-        ui.packingStyle.helpTip = "Compact preserves the orderly v1.1 packing. Interlocking and Loose Mosaic vary feature-tile tiers, break up long seams, and disperse sizes vertically.";
+        ui.packingStyle.selection = savedStyle === "Loose Mosaic" ? 2 : (savedStyle === "Compact" ? 0 : 1);
+        ui.packingStyle.helpTip = "정돈은 질서 있게, 맞물림·느슨한 모자이크는 큰 타일의 위치와 크기를 섞어 세로로 분산합니다.";
 
-        optionPanel = palette.add("panel", undefined, "Options");
+        // 옵션
+        optionPanel = palette.add("panel", undefined, "옵션");
         optionPanel.orientation = "column";
         optionPanel.alignChildren = ["left", "top"];
         optionPanel.spacing = 4;
-        optionPanel.margins = 8;
-        ui.cropCover = optionPanel.add("checkbox", undefined, "Crop Cover with layer masks");
+        optionPanel.margins = [10, 12, 10, 8];
+        ui.cropCover = optionPanel.add("checkbox", undefined, "채우기(Cover) 시 레이어 마스크로 잘라내기");
         ui.cropCover.value = getSavedSetting("crop", "1") !== "0";
-        ui.cropCover.helpTip = "Adds or recalculates one named rectangular mask per layer on every run.";
-        ui.centerLayout = optionPanel.add("checkbox", undefined, "Center layout in composition");
+        ui.cropCover.helpTip = "실행할 때마다 레이어마다 이름이 정해진 사각 마스크 하나를 만들거나 다시 계산합니다.";
+        ui.centerLayout = optionPanel.add("checkbox", undefined, "그리드를 컴프 가운데에 놓기");
         ui.centerLayout.value = getSavedSetting("center", "1") !== "0";
-        ui.mixOrientations = optionPanel.add("checkbox", undefined,
-            "Mix horizontal / vertical tile frames");
+        ui.mixOrientations = optionPanel.add("checkbox", undefined, "가로·세로 타일 섞기 (2×1 / 1×2)");
         ui.mixOrientations.value = getSavedSetting("mixOrientations", "1") !== "0";
-        ui.mixOrientations.helpTip = "Swaps some 2×1/1×2-style frames without rotating layer pixels. Cover may crop those images more strongly.";
+        ui.mixOrientations.helpTip = "일부 타일을 가로형·세로형으로 바꿉니다(픽셀을 돌리지는 않음). Cover 에서는 그 이미지가 더 많이 잘릴 수 있습니다.";
 
+        // 실행
+        ui.repack = addAccentButton(palette, "▶  Bento Grid 적용", "같은 설정이면 항상 같은 결과로 배치하고 크롭 마스크를 다시 계산합니다.");
         buttons = palette.add("group");
         buttons.orientation = "row";
         buttons.alignChildren = ["fill", "center"];
         buttons.spacing = 4;
-        ui.repack = buttons.add("button", undefined, "Repack");
-        ui.randomize = buttons.add("button", undefined, "Randomize");
-        ui.deleteAllMasks = buttons.add("button", undefined, "Delete Selected Masks…");
-        ui.repack.helpTip = "Rebuilds a deterministic layout and recalculates every Bento crop path.";
-        ui.randomize.helpTip = "Varies feature-tile sizes and ordering, then recalculates and repacks.";
-        ui.deleteAllMasks.helpTip = "Deletes every unlocked mask on selected layers after a confirmation. User masks are included.";
-
-        ui.clearMasks = palette.add("button", undefined, "Clear Bento Masks");
-        ui.clearMasks.helpTip = "Removes only __BENTO_GRID_CROP__ masks from selected layers. Scale and Position stay unchanged; Undo restores them.";
+        ui.randomize = buttons.add("button", undefined, "무작위 배치");
+        ui.randomize.helpTip = "큰 타일의 크기와 순서를 바꿔 다시 배치합니다.";
+        ui.clearMasks = buttons.add("button", undefined, "Bento 마스크 제거");
+        ui.clearMasks.helpTip = "선택한 레이어에서 " + CROP_MASK_NAME + " 마스크만 제거합니다. 크기·위치는 그대로, 실행 취소로 복원됩니다.";
+        maskRow = palette.add("group");
+        maskRow.orientation = "row";
+        maskRow.alignChildren = ["fill", "center"];
+        ui.deleteAllMasks = maskRow.add("button", undefined, "선택 레이어의 마스크 전부 삭제…");
+        ui.deleteAllMasks.helpTip = "확인 후 선택한 레이어의 잠기지 않은 마스크를 모두 삭제합니다(직접 만든 마스크 포함).";
 
         ui.status = palette.add("statictext", undefined,
-            "Select image layers, then choose Repack or Randomize.", {multiline: true});
+            "이미지 레이어를 선택한 뒤 [Bento Grid 적용] 또는 [무작위 배치]를 누르세요.", {multiline: true});
         ui.status.preferredSize.height = 32;
         ui.status.alignment = ["fill", "top"];
-        ui.status.helpTip = "Skipped-layer details and warnings appear here after packing.";
+        ui.status.helpTip = "배치 후 건너뛴 레이어와 경고가 여기에 표시됩니다.";
 
         ui.repack.onClick = function () {
             runLayout(ui, false);
@@ -2840,15 +2844,13 @@
             deleteAllSelectedMasks(ui);
         };
         ui.fitMode.onChange = function () {
-            ui.cropCover.enabled = ui.fitMode.selection && ui.fitMode.selection.text === "Cover";
+            ui.cropCover.enabled = ui.fitMode.selection && ui.fitMode.selection.index === 0;
         };
         ui.packingStyle.onChange = function () {
-            ui.mixOrientations.enabled = ui.packingStyle.selection &&
-                ui.packingStyle.selection.text.indexOf("Compact") !== 0;
+            ui.mixOrientations.enabled = ui.packingStyle.selection && ui.packingStyle.selection.index !== 0;
         };
-        ui.cropCover.enabled = ui.fitMode.selection && ui.fitMode.selection.text === "Cover";
-        ui.mixOrientations.enabled = ui.packingStyle.selection &&
-            ui.packingStyle.selection.text.indexOf("Compact") !== 0;
+        ui.cropCover.enabled = ui.fitMode.selection && ui.fitMode.selection.index === 0;
+        ui.mixOrientations.enabled = ui.packingStyle.selection && ui.packingStyle.selection.index !== 0;
 
         palette.layout.layout(true);
         palette.layout.resize();

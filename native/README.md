@@ -48,6 +48,7 @@ native/
 - `Grid`: `Columns` · `Rows` · `Gap X/Y (px)` · `Origin X` / `Origin Y`(원본이 놓이는 칸, 1 기준; Columns/Rows 를 넘으면 `USER_CHANGED_PARAM` 에서 보정) · `Origin Preset`(3×3 퀵 버튼 — Anchor 컨트롤과 같은 굵은 화살표 + 가운데 Align Center 아이콘, Drawbot MoveTo/LineTo 다각형)
 - `Radial`: `Radius (px)` · `Start Angle` + `Nudge` 버튼 한 줄 11개(−360 −90 −15 −2.5 −1 0 +1 +2.5 +15 +90 +360; 0 = 리셋, 나머지는 현재 값에 가감; 22px 정사각, 글자 9pt) · `Sweep (deg)` + `Preset` 버튼(절대값) · `Face Outward` · `Center`(레이어 좌표, 기본 50%)
 - `Step`: `Rotation Step` + `Nudge` 버튼 · `Scale Step` · `End Opacity` — 단계는 **원본 클론을 0** 으로 앞뒤 누적
+- `Path`: `Mask Path`(PF_Param_PATH — 이 레이어의 마스크) · `Align to Path` · `Path Offset (%)`. `PF_PathQuerySuite1::PF_CheckoutPath` → 세그먼트별 `PF_PathPrepareSegLength/GetSegLength` 로 총 길이 → `PF_PathEvalSegLengthDeriv1` 로 위치·접선. **셰이프/텍스트 레이어는 패스 좌표 원점이 레이어 중심**(솔리드/푸티지는 좌상단)이라 `AEGP_GetEffectLayer`+`AEGP_GetLayerObjectType` 이 VECTOR/TEXT 면 절반 크기를 뺀다. 좌표는 풀해상도 → ds 곱.
 - `Random`: `Seed` · `Random Position/Rotation/Scale`
 - 퀵 버튼 = `PF_Param_CHECKBOX`(값 미사용, `CANNOT_TIME_VARY`) + `PF_PUI_CONTROL` 커스텀 컨트롤. `PF_OutFlag_CUSTOM_UI` + `register_ui`, `PF_Cmd_EVENT` 의 `PF_Event_DRAW`(Drawbot: AddRect/FillPath/StrokePath/DrawString Center 정렬) 와 `PF_Event_DO_CLICK`(`screen_point` 와 `effect_win.current_frame` 은 같은 좌표계) 로 그리기/클릭. 클릭 시 대상 파라미터 값을 바꾸고 `PF_ChangeFlag_CHANGED_VALUE` + `PF_InvalidateRect` + `PF_EO_UPDATE_NOW`.
 - 그룹 표시: 활성 배치 그룹만 `PF_UpdateParamUI`(`PF_Param_GROUP_START`, `COLLAPSE_TWIRLY` 토글) 로 펼치고 나머지는 접음 + `PF_PUI_DISABLED` 로 회색 처리(그룹 헤더에도 먹음). 그룹 이름 앞 글리프(⋯ ▦ ◎ ∆ ⚄)는 UTF-8 이름으로 표시됨(SVG 아이콘은 불가; ↻ 는 Ʊ 처럼 읽혀 ∆ 로 교체). Grid/Radial/Step/Random 은 `PF_ParamFlag_START_COLLAPSED` 로 접힌 채 생성(Linear 만 펼침). **숨기지 않는 이유**: 그룹 스트림을 HIDDEN 하면 안의 커스텀 컨트롤(퀵 버튼) 본문 영역이 빈 칸으로 남는다(접기·ui_height 변경·그리기 생략 모두 무효, AE 2026). 커스텀 컨트롤이 없는 그룹만이라면 숨김 가능. `PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG` 로 그룹 기본 펼침(flags=0). 각도 파라미터는 `COLLAPSE_TWIRLY` 로 다이얼 접어 시작.
@@ -71,3 +72,5 @@ native/
 - `PF_Param_NO_DATA` 커스텀 컨트롤도 숨긴 그룹에서 행이 남는다 → 퀵 버튼은 체크박스형 + `PF_PUI_CONTROL` 로.
 - **관리자 PowerShell 창 함정**: `deploy-local.ps1` 의 승격 창이 남아 있으면 computer-use 스크린샷에서 검은 사각형(마스크)으로 AE 위를 덮어 "ECW 가 깨졌다"는 착각을 일으킨다(이 세션에서 그룹/커스텀 UI 를 두 번 잘못 의심함). 화면이 이상하면 먼저 `Get-Process | ? MainWindowTitle` 로 `관리자: Windows PowerShell` 을 찾아 승격 `Stop-Process`.
 - 설치 권한: `tools\grant-write-access.ps1` 한 번(UAC 1회) → `Plug-ins\BANG` 과 CEP 폴더에 사용자 Modify 권한 → 이후 복사에 UAC 불필요. `build-native.ps1 -Install` 은 쓰기 가능하면 직접 복사하고 해시로 검증(AE 실행 중이면 검증 실패로 알려줌).
+- **같은 버전 번호의 `.aex` 를 바꿔 끼우면** AE 디스크 캐시가 이전 빌드의 렌더를 그대로 돌려준다(파라미터 상태가 같으면) → `reload-in-ae.ps1` 이 재시작 후 `app.purge(PurgeTarget.ALL_CACHES)`. 검증 전엔 반드시 퍼지.
+- `applyNativeEffect` 의 프로브 Null 은 맨 위에 추가돼 레이어 인덱스가 1씩 밀린다 → 표현식엔 캡처한 인덱스 대신 `layer.index` 를 쓴다.

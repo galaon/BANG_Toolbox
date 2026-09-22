@@ -15,7 +15,7 @@
 #include <vector>
 
 #define BANG_CLONER_MAJOR   1
-#define BANG_CLONER_MINOR   2
+#define BANG_CLONER_MINOR   6
 #define BANG_CLONER_BUG     0
 #define BANG_CLONER_STAGE   PF_Stage_DEVELOP
 #define BANG_CLONER_BUILD   1
@@ -50,8 +50,15 @@ enum {
     BC_SWEEP,           //   Sweep
     BC_SWEEP_QUICK,     //   [커스텀 UI] 각도 퀵 버튼 → Sweep
     BC_FACE_OUT,        //   Face Outward
-    BC_CENTER,          //   Center — 원 중심, 레이어 좌표
+    BC_CENTER_OBJ,      //   Center on Object — 켜면 원 중심 = 소스 내용 중심 (기본)
+    BC_CENTER,          //   Center — 직접 지정한 원 중심 (Center on Object 가 꺼졌을 때)
     BC_G_RADIAL_END,
+
+    BC_G_PATH,          // ── Path ──
+    BC_PATH,            //   Mask Path — 이 레이어의 마스크 패스 (PF_Param_PATH)
+    BC_PATH_ALIGN,      //   Align to Path — 클론을 진행 방향으로 회전
+    BC_PATH_OFFSET,     //   Path Offset (%) — 시작 위치를 패스 길이의 % 만큼 이동
+    BC_G_PATH_END,
 
     BC_G_STEP,          // ── Step ──
     BC_ROT_STEP,        //   Rotation Step (클론당 °)
@@ -70,7 +77,7 @@ enum {
     BC_NUM_PARAMS
 };
 
-enum { BC_MODE_LINEAR = 1, BC_MODE_GRID = 2, BC_MODE_RADIAL = 3 };
+enum { BC_MODE_LINEAR = 1, BC_MODE_GRID = 2, BC_MODE_RADIAL = 3, BC_MODE_PATH = 4 };
 enum { BC_DIR_H = 1, BC_DIR_V = 2 };
 
 // 클론 하나의 변환: 출력 = [a b; c d]·소스 + [tx ty] (레이어 좌표) + 불투명도

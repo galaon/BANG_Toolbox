@@ -3,6 +3,16 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.5] — 2026-09-22
+
+### Added
+- **BANG Cloner v1.6 — `Path` 배치** — 이 레이어의 **마스크 패스**를 따라 길이 기준으로 균등 배치(`Mask Path`, `Align to Path`, `Path Offset %`). 패널의 Cloner 타일은 **레이어 + 셰이프 레이어(펜 패스)** 를 함께 선택하고 누르면 셰이프의 패스(그룹 변환·레이어 변환 반영)를 대상 레이어의 `BANG Path` 마스크로 복사하고 Layout 을 Path 로 바꿉니다. (사각형·타원 파라메트릭 셰이프는 "베지어 패스로 변환" 후 사용)
+
+### Changed
+- **BANG Cloner** — Radial 에 `Center on Object`(기본 켜짐: 원 중심 = 오브젝트 중심, 끄면 `Center` 포인트 사용). 퀵 버튼 이름 `Start Angle Preset` / `Sweep Preset` / `Rotation Step Preset`, Sweep 도 증감 프리셋(가운데 = 360 리셋). 그룹 이름 오른쪽에 실선(`Linear ────────`) 구분.
+- **Bento Grid 창** — 한글화·정리(사용법 4줄, 크기 / 배치 / 옵션 패널, 툴팁), 눈에 띄는 **`▶ Bento Grid 적용`** 버튼, `무작위 배치` / `Bento 마스크 제거` / `선택 레이어의 마스크 전부 삭제…`.
+- `reload-in-ae.ps1` 이 재시작 후 AE 캐시를 비움(같은 버전 `.aex` 교체 시 예전 렌더가 캐시에서 나오던 문제).
+
 ## [1.3.4] — 2026-09-22
 
 ### Changed

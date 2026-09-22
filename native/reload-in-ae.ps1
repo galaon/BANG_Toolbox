@@ -20,4 +20,6 @@ while ($t -lt 240) {
   Start-Sleep 5; $t += 5
 }
 Start-Sleep 3
-Write-Host "AE relaunched, panel up after ${t}s" -ForegroundColor Green
+# 같은 버전 번호의 .aex 를 바꿔 끼우면 AE 디스크 캐시가 예전 렌더를 그대로 돌려준다 → 캐시 비움
+try { & node (Join-Path $repo 'tools\cep-eval.js') jsx 'app.purge(PurgeTarget.ALL_CACHES); "purged"' | Out-Null } catch {}
+Write-Host "AE relaunched (caches purged), panel up after ${t}s" -ForegroundColor Green
