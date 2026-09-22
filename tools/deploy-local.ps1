@@ -43,7 +43,9 @@ $target = Join-Path $extDir $BundleId
 # -- elevation (Machine scope only) ----------------------------------------
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if ($Scope -eq 'Machine' -and -not $isAdmin -and -not $WhatIf) {
+$canWrite = $false
+if (Test-Path $target) { try { $probe = Join-Path $target ('.w' + [guid]::NewGuid().ToString('N')); Set-Content $probe 'x' -ErrorAction Stop; Remove-Item $probe -Force; $canWrite = $true } catch {} }
+if ($Scope -eq 'Machine' -and -not $isAdmin -and -not $canWrite -and -not $WhatIf) {   # tools\grant-write-access.ps1 후에는 승격 불필요
   Write-Host "Elevation required for $extDir - relaunching as administrator..." -ForegroundColor Yellow
   # 승격 창은 끝나면 닫히도록(-NoExit 금지: 남아 있는 관리자 창이 자동화 스크린샷을 가리고 클릭을 막는다) 숨겨서 실행하고 끝날 때까지 기다린다
   $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',

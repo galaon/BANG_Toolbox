@@ -344,35 +344,41 @@ pfAllBtn.addEventListener('click', () => {
   pfAllBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
 });
 
-// Pad: 휠로 ±1(Shift ±10), 값 변경 시 자동 재실행 (400ms 디바운스)
-(function initPad() {
-  const pad = document.getElementById('pf-margin');
-  let timer = null;
-  const rerun = () => { clearTimeout(timer); timer = setTimeout(() => document.getElementById('btn-precomp-fit').click(), 400); };
-  pad.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const step = e.shiftKey ? 10 : 1;
-    pad.value = Math.max(0, (parseInt(pad.value, 10) || 0) + (e.deltaY < 0 ? step : -step));
-    rerun();
-  }, { passive: false });
-  pad.addEventListener('input', rerun);
+// 여백(Pad)은 프리컴프 안의 'BANG Crop' 컨트롤러(Slider "Pad (px)")가 정한다.
+// 자동 재실행: 컨트롤러의 Pad 가 마지막으로 적용한 값과 달라진 채 1초 안정되면 Crop 을 다시 실행
+(function initCropAuto() {
+  let last = null, stable = 0, busy = false;
+  setInterval(() => {
+    if (busy) return;
+    if (/^Crop Precomp( \(all frames\))?\.\.\./.test(document.getElementById('status-text').textContent)) return;   // 실행 중
+    busy = true;
+    evalScript('cropPollState()', (result) => {
+      busy = false;
+      try {
+        const st = JSON.parse(result);
+        if (!st.success || !st.active || !st.dirty) { last = null; stable = 0; return; }
+        const key = `${st.comp}|${st.pad}`;
+        if (key === last) stable++; else { last = key; stable = 0; }
+        if (stable >= 1) { stable = 0; document.getElementById('btn-precomp-fit').click(); }
+      } catch (e) { /* ignore */ }
+    });
+  }, 700);
 })();
 
 document.getElementById('btn-precomp-fit').addEventListener('click', () => {
-  const margin = Math.max(0, parseFloat(document.getElementById('pf-margin').value) || 0);
   const mode   = pfAllBtn.getAttribute('aria-pressed') === 'true' ? 'all' : 'current';
-  setStatus(mode === 'all' ? 'Precomp Crop (all frames)...' : 'Precomp Crop...');
-  evalScript(`fitPrecomp(${margin}, "${mode}")`, (result) => {
+  setStatus(mode === 'all' ? 'Crop Precomp (all frames)...' : 'Crop Precomp...');
+  evalScript(`fitPrecomp("${mode}")`, (result) => {
     try {
       const res = JSON.parse(result);
       if (res.success) {
         const parts = res.fitted.map(f =>
           `${f.name}: ${f.from[0]}×${f.from[1]} → ${f.to[0]}×${f.to[1]}` +
-          (f.instances ? ` (${f.instances} inst.)` : ''));
-        let msg = 'Precomp Crop — ' + parts.join(' · ');
+          (f.pad ? ` pad ${f.pad}` : '') + (f.instances ? ` (${f.instances} inst.)` : ''));
+        let msg = 'Crop Precomp — ' + parts.join(' · ') + " (여백은 프리컴프의 'BANG Crop' > Pad)";
         if (res.warnings.length) msg += ` · ${res.warnings.length} warning(s)`;
         setStatus(msg, res.warnings.length ? 'default' : 'success');
-        if (res.warnings.length) console.warn('Precomp Crop warnings:', res.warnings);
+        if (res.warnings.length) console.warn('Crop Precomp warnings:', res.warnings);
       } else {
         setStatus('Error: ' + res.error, 'error');
       }

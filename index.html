@@ -17,6 +17,7 @@
 
       <!-- Layout row: Null · Anchor Point · Align · Align to (한 줄) -->
       <div class="tool-row">
+        <div class="lay-group lay-group--anchor">
         <button class="null-btn" id="btn-create-green-null">
           <svg class="null-btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
@@ -36,6 +37,8 @@
           <button class="ap-btn" data-h="0.5" data-v="1" title="Bottom Center" aria-label="Anchor Bottom Center"><svg class="ap-icon" viewBox="0 0 64 64" fill="currentColor" aria-hidden="true"><path d="M28.67,10.67h6.67c1.1,0,2,.9,2,2v17.17c0,1.78,2.15,2.67,3.41,1.41l4.5-4.5c.78-.78,2.05-.78,2.83,0l3.62,3.62c.78.78.78,2.05,0,2.83l-18.29,18.29c-.78.78-2.05.78-2.83,0l-18.29-18.29c-.78-.78-.78-2.05,0-2.83l3.62-3.62c.78-.78,2.05-.78,2.83,0l4.5,4.5c1.26,1.26,3.41.37,3.41-1.41V12.67c0-1.1.9-2,2-2Z"/></svg></button>
           <button class="ap-btn" data-h="1" data-v="1" title="Bottom Right" aria-label="Anchor Bottom Right"><svg class="ap-icon" viewBox="0 0 64 64" fill="currentColor" aria-hidden="true"><path d="M39.71,27.34v-6.38c0-1.1.9-2,2-2h5.12c1.1,0,2,.9,2,2v25.87c0,1.1-.9,2-2,2h-25.87c-1.1,0-2-.9-2-2v-5.12c0-1.1.9-2,2-2h6.38c1.78,0,2.67-2.15,1.42-3.41l-12.18-12.21c-.78-.78-.78-2.05,0-2.83l4.67-4.67c.78-.78,2.04-.78,2.83,0l12.21,12.18c1.26,1.26,3.41.36,3.41-1.42Z"/></svg></button>
         </div>
+        </div>
+        <div class="lay-group lay-group--align">
         <div class="al-grid">
           <button class="al-btn" data-axis="x" data-mode="center" title="Align Horizontal Center" aria-label="Align Horizontal Center"><svg class="al-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="2.5" y="4" width="11" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="9" width="7" height="3" rx="0.8" fill="currentColor"/></svg></button>
           <button class="al-btn" data-axis="y" data-mode="min" title="Align Top" aria-label="Align Top"><svg class="al-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 2.5h13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="4" y="4.5" width="3" height="9" rx="0.8" fill="currentColor"/><rect x="9" y="4.5" width="3" height="6" rx="0.8" fill="currentColor"/></svg></button>
@@ -54,6 +57,7 @@
             <span class="vswitch__track" aria-hidden="true"><span class="vswitch__knob"></span></span>
             <span class="vswitch__opt vswitch__opt--on">Comp</span>
           </button>
+        </div>
         </div>
       </div>
     </section>
@@ -121,7 +125,7 @@
              style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:none;padding:0;">
     </section>
 
-    <!-- ═══════════ TOOLS : Quote Align · Precomp Crop · Cloner · Stroke (정사각 타일) ═══════════ -->
+    <!-- ═══════════ TOOLS : Quote Align · Crop Precomp · Cloner · Stroke (정사각 타일) ═══════════ -->
     <section class="card" aria-labelledby="ttl-tools">
       <h2 class="card__title" id="ttl-tools">Tools</h2>
       <div class="tile-row">
@@ -132,18 +136,13 @@
             <path fill="currentColor" d="M9.22,16.54c-1,0-1.99.26-2.86.76,1.23-3.18,3.27-5.99,5.91-8.14.64-.52.73-1.47.2-2.1-.52-.64-1.47-.73-2.1-.2-5.43,4.41-7.84,10.51-7.84,14.3.02,2.73,1.65,5.2,4.16,6.28.8.39,1.67.59,2.55.6,3.17.15,5.87-2.29,6.02-5.47s-2.29-5.87-5.47-6.02c-.19,0-.37,0-.56,0h-.03Z"/>
             <path fill="currentColor" d="M24.33,16.54c-1,0-1.99.26-2.86.76,1.23-3.18,3.26-5.98,5.9-8.14.67-.48.82-1.41.34-2.08-.48-.67-1.41-.82-2.08-.34-.05.04-.1.07-.14.11-5.43,4.41-7.84,10.51-7.84,14.3.01,2.7,1.6,5.15,4.07,6.25.82.4,1.71.6,2.62.6,3.17.15,5.87-2.29,6.02-5.47s-2.29-5.87-5.47-6.02c-.19,0-.37,0-.56,0v.03Z"/>
           </svg>
-          <span class="tile__label">Quote</span>
+          <span class="tile__label">Quote Align</span>
         </button>
-        <button class="tile" id="btn-precomp-fit" title="Precomp Crop — 선택한 프리컴프(또는 현재 컴프)를 내부 레이어 경계(Stroke 포함)+Pad 로 자릅니다. Pad 변경 시 자동 재실행">
+        <button class="tile" id="btn-precomp-fit" title="Crop Precomp — 선택한 프리컴프(또는 현재 컴프)를 내부 레이어 경계(Stroke 포함)에 맞춰 자릅니다. 여백은 프리컴프 안에 생기는 'BANG Crop' 컨트롤러의 'Pad (px)'로 조절 — 값을 바꾸면 자동으로 다시 잘림">
           <svg class="tile__icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M19 7.5C19 6.121 17.879 5 16.5 5H8V2H5v3H2v3h14v14h3v-3h3v-3h-3z"/><path d="M8 10H5v6.5C5 17.879 6.121 19 7.5 19H14v-3H8z"/></svg>
-          <span class="tile__label">Crop</span>
+          <span class="tile__label">Crop Precomp</span>
         </button>
         <div class="tile-opts" role="group" aria-label="Precomp Crop 옵션">
-          <label class="pf-field pf-field--pad" title="여백 — 마우스 휠로 ±1 (Shift: ±10). 값을 바꾸면 자동 재실행">
-            <span class="pf-field__key">Pad</span>
-            <input class="pf-input pf-input--pad" id="pf-margin" type="number" min="0" step="1" value="0" inputmode="numeric" aria-label="여백 px">
-            <span class="pf-field__unit">px</span>
-          </label>
           <button class="pf-toggle" id="pf-all-frames" type="button" aria-pressed="false" title="전체 프레임(워크에어리어) 샘플링 — 끄면 현재 프레임만">All</button>
         </div>
         <button class="tile" id="btn-cloner" title="Cloner — 선택한 레이어에 네이티브 'BANG Cloner' 이펙트를 적용 (레이어 복제 없이 N개 인스턴스 렌더. Layout·Count·Gap·Origin·Rotation/Scale Step·Random 은 Effect Controls). 플러그인 미설치 시 스크립트 클로너('BANG 클로너' 이펙트 + 레이어 복제)로 동작">

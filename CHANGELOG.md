@@ -3,6 +3,14 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.2] — 2026-09-22
+
+### Changed
+- **BANG Cloner v1.3 (Effect Controls)** — `Origin Preset` 를 **3×3** 로 배치. 각도 퀵 버튼은 절대값 대신 **증감(Nudge)**: `-360 -180 -90 -45 -15 -2.5 -1 | 0 | +1 +2.5 +15 +45 +90 +180 +360` (0 만 0 으로 리셋; `Start Angle`·`Rotation Step`). `Sweep` 은 절대 프리셋 유지. px/deg 단위를 이름에 표기(`Gap (px)`, `Radius (px)`, `Sweep (deg)` …).
+- **Crop Precomp** — 패널의 `Pad` 입력을 없애고, 자를 때 프리컴프 안에 **`BANG Crop` 컨트롤러**(shy Null + `Pad (px)` 슬라이더)를 만듭니다. 그 값을 바꾸면 약 1초 뒤 자동으로 다시 잘립니다(선택한 프리컴프 레이어 또는 열려 있는 프리컴프 기준). 타일 이름 `Quote Align`, `Crop Precomp`.
+- **패널 반응형** — 폭 340px 미만이면 Layout 카드가 `[Null ↑ Anchor] [Align to ↑ Align]` 두 스택으로 바뀌고 Align to 스위치가 가로형이 됩니다(FHD 좁은 도킹 대응). Anchor/Align 중앙 버튼의 밝기 강조 제거.
+- **설치 권한** — `tools/grant-write-access.ps1` 를 한 번 실행하면(UAC 1회) 이후 `deploy-local.ps1` / `build-native.ps1 -Install` 이 UAC 없이 복사합니다. 두 스크립트는 쓰기 권한이 있으면 승격하지 않고, 설치 후 해시로 검증합니다.
+
 ## [1.3.1] — 2026-09-22
 
 ### Changed (BANG Cloner v1.2 — Effect Controls 정리)
