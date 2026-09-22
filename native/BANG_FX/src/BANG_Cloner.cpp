@@ -55,21 +55,21 @@ static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
 // ── 퀵 버튼 정의 (커스텀 ECW UI) ──
 // kind: 0 = 각도 절대값 · 1 = float 절대값 · 2 = Origin 3×3 (대상 X/Y 두 개) · 3 = 각도 증감(0 은 0 으로 리셋)
 struct QuickRow { int param; int kind; int target; int target2; int n; const float* values; const char* const* labels; int cols; };
-static const float  kAngleDelta[]  = { -360, -180, -90, -45, -15, -2.5f, -1, 0, 1, 2.5f, 15, 45, 90, 180, 360 };
-static const char* const kAngleDeltaLbls[] = { "-360", "-180", "-90", "-45", "-15", "-2.5", "-1", "0", "+1", "+2.5", "+15", "+45", "+90", "+180", "+360" };
+static const float  kAngleDelta[]  = { -360, -90, -15, -2.5f, -1, 0, 1, 2.5f, 15, 90, 360 };
+static const char* const kAngleDeltaLbls[] = { "-360", "-90", "-15", "-2.5", "-1", "0", "+1", "+2.5", "+15", "+90", "+360" };
 static const float  kSweepVals[]   = { 45, 90, 180, 270, 360 };
 static const char* const kSweepLbls[] = { "45", "90", "180", "270", "360" };
 static const float  kOriginVals[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };   // 3×3 인덱스: 열 = i%3, 행 = i/3 (0 first · 1 center · 2 last)
 static const char* const kOriginLbls[] = { "\xE2\x86\x96", "\xE2\x86\x91", "\xE2\x86\x97", "\xE2\x86\x90", "\xE2\x97\x8F", "\xE2\x86\x92", "\xE2\x86\x99", "\xE2\x86\x93", "\xE2\x86\x98" };
 static const QuickRow kQuick[] = {
     { BC_ORIGIN_QUICK, 2, BC_ORIGIN_X,    BC_ORIGIN_Y, 9,  kOriginVals, kOriginLbls,     3 },
-    { BC_START_QUICK,  3, BC_START_ANGLE, -1,          15, kAngleDelta, kAngleDeltaLbls, 8 },
+    { BC_START_QUICK,  3, BC_START_ANGLE, -1,          11, kAngleDelta, kAngleDeltaLbls, 11 },
     { BC_SWEEP_QUICK,  1, BC_SWEEP,       -1,          5,  kSweepVals,  kSweepLbls,      5 },
-    { BC_ROT_QUICK,    3, BC_ROT_STEP,    -1,          15, kAngleDelta, kAngleDeltaLbls, 8 },
+    { BC_ROT_QUICK,    3, BC_ROT_STEP,    -1,          11, kAngleDelta, kAngleDeltaLbls, 11 },
 };
 static int QuickRows(const QuickRow& q) { return (q.n + q.cols - 1) / q.cols; }
 static const QuickRow* FindQuick(int param) { for (const QuickRow& q : kQuick) if (q.param == param) return &q; return nullptr; }
-static const int kQuickBtnH = 18, kQuickBtnGap = 3, kQuickBtnW = 30;
+static const int kQuickBtnH = 22, kQuickBtnGap = 3, kQuickBtnW = 22;   // 정사각 버튼
 
 static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
@@ -87,7 +87,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Count", 1, 1000, 1, 50, 5, BC_COUNT);
 
-    TOPIC("Linear", BC_G_LINEAR);
+    TOPIC("\xE2\x8B\xAF Linear", BC_G_LINEAR);
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Origin Index", 1, 1000, 1, 50, 1, BC_ORIGIN);
     AEFX_CLR_STRUCT(def);
@@ -98,7 +98,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_FLOAT_SLIDERX("Offset (px)", -10000, 10000, -500, 500, 0, PF_Precision_TENTHS, 0, 0, BC_OFFSET);
     TOPIC_END(BC_G_LINEAR_END);
 
-    TOPIC("Grid", BC_G_GRID);
+    TOPIC("\xE2\x96\xA6 Grid", BC_G_GRID);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
     PF_ADD_SLIDER("Columns", 1, 100, 1, 20, 3, BC_COLS);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
@@ -114,12 +114,12 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     QUICK_ROW("Origin Preset", BC_ORIGIN_QUICK, 3);
     TOPIC_END(BC_G_GRID_END);
 
-    TOPIC("Radial", BC_G_RADIAL);
+    TOPIC("\xE2\x97\x8E Radial", BC_G_RADIAL);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Radius (px)", -10000, 10000, 0, 1000, 200, PF_Precision_TENTHS, 0, 0, BC_RADIUS);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;   // 다이얼 접힘 (숨긴 그룹의 다이얼이 ECW 에 남는 현상 방지)
     PF_ADD_ANGLE("Start Angle", 0, BC_START_ANGLE);
-    QUICK_ROW("Nudge", BC_START_QUICK, 2);
+    QUICK_ROW("Nudge", BC_START_QUICK, 1);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Sweep (deg)", -3600, 3600, 0, 360, 360, PF_Precision_TENTHS, 0, 0, BC_SWEEP);
     QUICK_ROW("Preset", BC_SWEEP_QUICK, 1);
@@ -129,17 +129,17 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_POINT("Center", 50, 50, 0, BC_CENTER);
     TOPIC_END(BC_G_RADIAL_END);
 
-    TOPIC("Step", BC_G_STEP);
+    TOPIC("\xE2\x86\xBB Step", BC_G_STEP);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
     PF_ADD_ANGLE("Rotation Step", 0, BC_ROT_STEP);
-    QUICK_ROW("Nudge", BC_ROT_QUICK, 2);
+    QUICK_ROW("Nudge", BC_ROT_QUICK, 1);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Scale Step", -1000, 1000, -50, 50, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, BC_SCALE_STEP);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("End Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, 0, BC_OPACITY_END);
     TOPIC_END(BC_G_STEP_END);
 
-    TOPIC("Random", BC_G_RANDOM);
+    TOPIC("\xE2\x9A\x84 Random", BC_G_RANDOM);
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Seed", 0, 9999, 0, 100, 0, BC_SEED);
     AEFX_CLR_STRUCT(def);
@@ -171,8 +171,8 @@ static BtnRect QuickBtnRect(const QuickRow& q, const PF_UnionableRect& frame, in
 {
     const int cols = q.cols;
     float frameW = (float)(frame.right - frame.left);
-    float w = (float)kQuickBtnW;
-    if (frameW > 0) w = std::max(14.f, std::min(40.f, (frameW - (cols - 1) * kQuickBtnGap) / cols));
+    float w = (float)kQuickBtnW;   // 정사각. 프레임이 좁으면 균등 축소
+    if (frameW > 0) w = std::max(12.f, std::min((float)kQuickBtnW, (frameW - (cols - 1) * kQuickBtnGap) / cols));
     BtnRect r;
     r.x = frame.left + (i % cols) * (w + kQuickBtnGap);
     r.y = frame.top + 1 + (i / cols) * (kQuickBtnH + kQuickBtnGap);
@@ -204,6 +204,55 @@ static void ToUTF16(const char* utf8, DRAWBOT_UTF16Char* out, int cap)
 #endif
 }
 
+// 굵은 화살표 (mdi arrow-*-thick 느낌): 방향 (dx,dy), 크기 s, 중심 (cx,cy) — 채운 다각형
+static void AddThickArrow(DRAWBOT_Suites& db, DRAWBOT_PathRef path, float cx, float cy, float dx, float dy, float s)
+{
+    float len = std::sqrt(dx * dx + dy * dy); if (len < 1e-6f) return; dx /= len; dy /= len;
+    const float px = -dy, py = dx;                       // 수직 방향
+    const float tail = -0.50f * s, headBase = 0.02f * s, tip = 0.50f * s;
+    const float shaft = 0.17f * s, head = 0.44f * s;
+    auto P = [&](float a, float b, float& x, float& y) { x = cx + dx * a + px * b; y = cy + dy * a + py * b; };
+    float x, y;
+    P(tail, -shaft, x, y);      db.path_suiteP->MoveTo(path, x, y);
+    P(headBase, -shaft, x, y);  db.path_suiteP->LineTo(path, x, y);
+    P(headBase, -head, x, y);   db.path_suiteP->LineTo(path, x, y);
+    P(tip, 0, x, y);            db.path_suiteP->LineTo(path, x, y);
+    P(headBase, head, x, y);    db.path_suiteP->LineTo(path, x, y);
+    P(headBase, shaft, x, y);   db.path_suiteP->LineTo(path, x, y);
+    P(tail, shaft, x, y);       db.path_suiteP->LineTo(path, x, y);
+    db.path_suiteP->Close(path);
+}
+
+// Origin 버튼 아이콘: 8방향 굵은 화살표, 가운데는 Align Center(십자 + 정사각)
+static PF_Err DrawOriginIcon(DRAWBOT_Suites& db, DRAWBOT_SupplierRef sup, DRAWBOT_SurfaceRef surf, DRAWBOT_BrushRef brush, DRAWBOT_PenRef penThin, int i, float cx, float cy, float size)
+{
+    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    DRAWBOT_PathRef path = NULL; ERR(db.supplier_suiteP->NewPath(sup, &path));
+    if (err) return err;
+    const int col = i % 3, row = i / 3;
+    if (col == 1 && row == 1) {
+        // 십자선 + 가운데 정사각
+        const float h = size * 0.5f;
+        db.path_suiteP->MoveTo(path, cx - h, cy); db.path_suiteP->LineTo(path, cx + h, cy);
+        db.path_suiteP->MoveTo(path, cx, cy - h); db.path_suiteP->LineTo(path, cx, cy + h);
+        ERR(db.surface_suiteP->StrokePath(surf, penThin, path));
+        DRAWBOT_PathRef sq = NULL; ERR(db.supplier_suiteP->NewPath(sup, &sq));
+        if (!err) {
+            const float q = size * 0.27f;
+            DRAWBOT_RectF32 rr = { cx - q, cy - q, q * 2, q * 2 };
+            ERR(db.path_suiteP->AddRect(sq, &rr));
+            ERR(db.surface_suiteP->FillPath(surf, brush, sq, kDRAWBOT_FillType_Default));
+            ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)sq));
+        }
+    } else {
+        const float dx = (float)(col - 1), dy = (float)(row - 1);
+        AddThickArrow(db, path, cx, cy, dx, dy, size);
+        ERR(db.surface_suiteP->FillPath(surf, brush, path, kDRAWBOT_FillType_Default));
+    }
+    ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)path));
+    return err;
+}
+
 static PF_Err QuickDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_EventExtra* ev, const QuickRow& q)
 {
     PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
@@ -220,6 +269,7 @@ static PF_Err QuickDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* p
     if (!err) {
         db.surface_suiteP->PushStateStack(surf);
         float fontSize = 11.f; db.supplier_suiteP->GetDefaultFontSize(sup, &fontSize);
+        if (q.cols >= 9) fontSize = std::min(fontSize, 9.f);   // 한 줄 11개(Nudge)는 작은 글자
         DRAWBOT_FontRef font = NULL; ERR(db.supplier_suiteP->NewDefaultFont(sup, fontSize, &font));
         const DRAWBOT_ColorRGBA cFill = { 0.30f, 0.30f, 0.30f, 1 }, cOn = { 0.16f, 0.45f, 0.85f, 1 }, cEdge = { 0.14f, 0.14f, 0.14f, 1 }, cText = { 0.92f, 0.92f, 0.92f, 1 };
         DRAWBOT_BrushRef bFill = NULL, bOn = NULL, bText = NULL; DRAWBOT_PenRef pen = NULL;
@@ -227,6 +277,7 @@ static PF_Err QuickDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* p
         ERR(db.supplier_suiteP->NewBrush(sup, &cOn, &bOn));
         ERR(db.supplier_suiteP->NewBrush(sup, &cText, &bText));
         ERR(db.supplier_suiteP->NewPen(sup, &cEdge, 1.f, &pen));
+        DRAWBOT_PenRef penIcon = NULL; ERR(db.supplier_suiteP->NewPen(sup, &cText, 1.5f, &penIcon));
         for (int i = 0; i < q.n && !err; i++) {
             BtnRect r = QuickBtnRect(q, ev->effect_win.current_frame, i);
             DRAWBOT_PathRef path = NULL; ERR(db.supplier_suiteP->NewPath(sup, &path));
@@ -234,11 +285,16 @@ static PF_Err QuickDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* p
             ERR(db.path_suiteP->AddRect(path, &rr));
             ERR(db.surface_suiteP->FillPath(surf, QuickIsActive(q, params, i) ? bOn : bFill, path, kDRAWBOT_FillType_Default));
             ERR(db.surface_suiteP->StrokePath(surf, pen, path));
-            DRAWBOT_UTF16Char txt[16]; ToUTF16(q.labels[i], txt, 16);
-            DRAWBOT_PointF32 org = { r.x + r.w * 0.5f, r.y + r.h * 0.5f + fontSize * 0.36f };
-            ERR(db.surface_suiteP->DrawString(surf, bText, font, txt, &org, kDRAWBOT_TextAlignment_Center, kDRAWBOT_TextTruncation_None, 0.f));
+            if (q.kind == 2) {
+                ERR(DrawOriginIcon(db, sup, surf, bText, penIcon, i, r.x + r.w * 0.5f + 0.5f, r.y + r.h * 0.5f + 0.5f, std::min(r.w, r.h) * 0.62f));
+            } else {
+                DRAWBOT_UTF16Char txt[16]; ToUTF16(q.labels[i], txt, 16);
+                DRAWBOT_PointF32 org = { r.x + r.w * 0.5f, r.y + r.h * 0.5f + fontSize * 0.36f };
+                ERR(db.surface_suiteP->DrawString(surf, bText, font, txt, &org, kDRAWBOT_TextAlignment_Center, kDRAWBOT_TextTruncation_None, 0.f));
+            }
             if (path) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)path));
         }
+        if (penIcon) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)penIcon));
         if (pen)   ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)pen));
         if (bText) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)bText));
         if (bOn)   ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)bOn));
@@ -329,7 +385,8 @@ static PF_Err UpdateParamsUI(PF_InData* in_data, PF_OutData* out_data, PF_ParamD
     for (const G& g : groups) {
         PF_ParamDef copy = *params[g.idx];
         copy.param_type = PF_Param_GROUP_START;
-        if (g.forMode == mode) copy.flags &= ~PF_ParamFlag_COLLAPSE_TWIRLY; else copy.flags |= PF_ParamFlag_COLLAPSE_TWIRLY;
+        if (g.forMode == mode) { copy.flags &= ~PF_ParamFlag_COLLAPSE_TWIRLY; copy.ui_flags &= ~PF_PUI_DISABLED; }
+        else                   { copy.flags |=  PF_ParamFlag_COLLAPSE_TWIRLY; copy.ui_flags |=  PF_PUI_DISABLED; }   // 비활성 그룹은 접고 회색으로
         ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, g.idx, &copy));
     }
     ERR2(suites.EffectSuite2()->AEGP_DisposeEffect(meH));

@@ -781,6 +781,7 @@ function applyQuoteHang() {
 var PF_MAX_SAMPLES = 120;   // "all" 모드 최대 샘플 프레임 수
 var PF_CTRL_NAME   = "BANG Crop";   // 프리컴프 안 여백 컨트롤러(Null + Slider "Pad (px)")
 var PF_CTRL_PARAM  = "Pad (px)";
+var PF_CTRL_ALL    = "All Frames";   // 체크 시 워크에어리어 전체 프레임 샘플링
 var PF_MIN_SIZE    = 4;
 var PF_MAX_SIZE    = 30000;
 
@@ -926,8 +927,14 @@ function _pfEnsureCtrl(comp) {
     var fx = n.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
     fx.name = PF_CTRL_PARAM;
     fx.property(1).setValue(0);
-    n.comment = "pad=0";
+    var cb = n.property("ADBE Effect Parade").addProperty("ADBE Checkbox Control");
+    cb.name = PF_CTRL_ALL;
+    cb.property(1).setValue(0);
+    n.comment = "pad=0;all=0";
     return n;
+}
+function _pfCtrlAll(ctrl) {
+    try { var v = ctrl.property("ADBE Effect Parade").property(PF_CTRL_ALL).property(1).value; return (v === true || v === 1); } catch (e) { return false; }
 }
 function _pfCtrlPad(ctrl) {
     var v = 0;
@@ -937,9 +944,10 @@ function _pfCtrlPad(ctrl) {
     return v;
 }
 
-function _pfFitOne(target, mode, warns) {
+function _pfFitOne(target, warns) {
     var ctrl = _pfEnsureCtrl(target);
     var margin = _pfCtrlPad(ctrl);
+    var mode = _pfCtrlAll(ctrl) ? "all" : "current";
     var b = _pfContentBounds(target, mode, warns);
     if (b === null) { warns.push(target.name + ": 측정 가능한 레이어 없음 — 건너뜀"); return null; }
 
@@ -985,15 +993,14 @@ function _pfFitOne(target, mode, warns) {
         if (sn.keys.length > 0) { for (var kk = 0; kk < sn.keys.length; kk++) sn.prop.setValueAtKey(kk + 1, shifted(sn.keys[kk])); }
         else sn.prop.setValue(shifted(sn.value));
     }
-    ctrl.comment = "pad=" + margin;
-    return { pad: margin, name: target.name, from: from, to: [w, h], offset: [dx, dy], instances: snaps.length };
+    ctrl.comment = "pad=" + margin + ";all=" + (mode === "all" ? 1 : 0);
+    return { pad: margin, mode: mode, name: target.name, from: from, to: [w, h], offset: [dx, dy], instances: snaps.length };
 }
 
 // 패널 진입점. margin(px), mode "current"|"all"
-function fitPrecomp(mode) {
+function fitPrecomp() {
     var comp = app.project ? app.project.activeItem : null;
     if (!(comp && comp instanceof CompItem)) return err("활성 컴프가 없습니다.");
-    mode = (mode === "all") ? "all" : "current";
 
     // 대상 수집: 선택된 프리컴프 레이어들(중복 제거) → 없으면 활성 컴프 자신
     var targets = [];
@@ -1017,7 +1024,7 @@ function fitPrecomp(mode) {
     app.beginUndoGroup("BANG Precomp Crop");
     try {
         for (var t = 0; t < targets.length; t++) {
-            var r = _pfFitOne(targets[t], mode, warns);
+            var r = _pfFitOne(targets[t], warns);
             if (r !== null) results.push(r);
         }
     } catch (eMain) {
@@ -1026,7 +1033,7 @@ function fitPrecomp(mode) {
     }
     app.endUndoGroup();
     if (results.length === 0) return err(warns.length ? warns.join(" / ") : "맞출 대상이 없습니다.");
-    return ok({ fitted: results, warnings: warns, fromOutside: fromOutside, mode: mode });
+    return ok({ fitted: results, warnings: warns, fromOutside: fromOutside });
 }
 
 // 패널 자동 재실행용 상태: 대상(선택 프리컴프 or 활성 컴프)에 'BANG Crop' 컨트롤러가 있고 Pad 가 마지막 적용값과 다르면 dirty
@@ -1041,10 +1048,11 @@ function cropPollState() {
         var ctrl = null;
         for (var k = 1; k <= target.numLayers; k++) if (target.layer(k).name === PF_CTRL_NAME) { ctrl = target.layer(k); break; }
         if (ctrl === null) return ok({ active: false });
-        var pad = _pfCtrlPad(ctrl);
-        var applied = parseFloat(String(ctrl.comment || "").replace(/^pad=/, ""));
-        if (isNaN(applied)) applied = -1;
-        return ok({ active: true, comp: target.name, pad: pad, applied: applied, dirty: Math.abs(pad - applied) > 0.05 });
+        var pad = _pfCtrlPad(ctrl), all = _pfCtrlAll(ctrl);
+        var m = /pad=([-\d.]+)(?:;all=(\d))?/.exec(String(ctrl.comment || ""));
+        var applied = m ? parseFloat(m[1]) : -1, appliedAll = m && m[2] ? (m[2] === "1") : false;
+        var dirty = Math.abs(pad - applied) > 0.05 || all !== appliedAll;
+        return ok({ active: true, comp: target.name, pad: pad, all: all, applied: applied, dirty: dirty });
     } catch (e2) {
         return ok({ active: false });
     }

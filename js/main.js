@@ -177,14 +177,14 @@ function cpRenderHistory() {
           ta.select();
           document.execCommand('copy');
           document.body.removeChild(ta);
-          setStatus('Copied: ' + hex, 'success');
+          setStatus('Copied: ' + hex, 'success'); cpToast('복사 완료!');
         } catch (e) {
           setStatus('Color: ' + hex, 'default');
         }
       };
       if (navigator.clipboard) {
         navigator.clipboard.writeText(hex)
-          .then(() => setStatus('Copied: ' + hex, 'success'))
+          .then(() => { setStatus('Copied: ' + hex, 'success'); cpToast('복사 완료!'); })
           .catch(copyFallback);
       } else {
         copyFallback();
@@ -260,6 +260,18 @@ eyedropperBtn.addEventListener('click', () => {
 
 // ── 클립보드 복사 ─────────────────────────────────────────────
 
+// 미리보기 위에 "복사 완료!" 를 1.2초 표시
+let cpToastTimer = null;
+function cpToast(text) {
+  const el = document.getElementById('cp-toast');
+  if (!el) return;
+  el.textContent = text || '복사 완료!';
+  el.hidden = false;
+  requestAnimationFrame(() => el.classList.add('is-on'));
+  clearTimeout(cpToastTimer);
+  cpToastTimer = setTimeout(() => { el.classList.remove('is-on'); setTimeout(() => { el.hidden = true; }, 180); }, 1200);
+}
+
 document.getElementById('cp-copy-btn').addEventListener('click', () => {
   const hex = cpCurrentHex;
   (navigator.clipboard
@@ -273,7 +285,7 @@ document.getElementById('cp-copy-btn').addEventListener('click', () => {
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-  }).then(() => setStatus('Copied: ' + hex, 'success'))
+  }).then(() => { setStatus('Copied: ' + hex, 'success'); cpToast('복사 완료!'); })
     .catch(() => setStatus('Copy failed', 'error'));
 });
 
@@ -338,11 +350,6 @@ document.getElementById('btn-quote-align').addEventListener('click', () => {
 
 // ── Precomp Fit ───────────────────────────────────────────────
 
-const pfAllBtn = document.getElementById('pf-all-frames');
-pfAllBtn.addEventListener('click', () => {
-  const on = pfAllBtn.getAttribute('aria-pressed') !== 'true';
-  pfAllBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-});
 
 // 여백(Pad)은 프리컴프 안의 'BANG Crop' 컨트롤러(Slider "Pad (px)")가 정한다.
 // 자동 재실행: 컨트롤러의 Pad 가 마지막으로 적용한 값과 달라진 채 1초 안정되면 Crop 을 다시 실행
@@ -350,14 +357,14 @@ pfAllBtn.addEventListener('click', () => {
   let last = null, stable = 0, busy = false;
   setInterval(() => {
     if (busy) return;
-    if (/^Crop Precomp( \(all frames\))?\.\.\./.test(document.getElementById('status-text').textContent)) return;   // 실행 중
+    if (/^Crop Precomp\.\.\./.test(document.getElementById('status-text').textContent)) return;   // 실행 중
     busy = true;
     evalScript('cropPollState()', (result) => {
       busy = false;
       try {
         const st = JSON.parse(result);
         if (!st.success || !st.active || !st.dirty) { last = null; stable = 0; return; }
-        const key = `${st.comp}|${st.pad}`;
+        const key = `${st.comp}|${st.pad}|${st.all ? 1 : 0}`;
         if (key === last) stable++; else { last = key; stable = 0; }
         if (stable >= 1) { stable = 0; document.getElementById('btn-precomp-fit').click(); }
       } catch (e) { /* ignore */ }
@@ -366,15 +373,14 @@ pfAllBtn.addEventListener('click', () => {
 })();
 
 document.getElementById('btn-precomp-fit').addEventListener('click', () => {
-  const mode   = pfAllBtn.getAttribute('aria-pressed') === 'true' ? 'all' : 'current';
-  setStatus(mode === 'all' ? 'Crop Precomp (all frames)...' : 'Crop Precomp...');
-  evalScript(`fitPrecomp("${mode}")`, (result) => {
+  setStatus('Crop Precomp...');
+  evalScript('fitPrecomp()', (result) => {
     try {
       const res = JSON.parse(result);
       if (res.success) {
         const parts = res.fitted.map(f =>
           `${f.name}: ${f.from[0]}×${f.from[1]} → ${f.to[0]}×${f.to[1]}` +
-          (f.pad ? ` pad ${f.pad}` : '') + (f.instances ? ` (${f.instances} inst.)` : ''));
+          (f.pad ? ` pad ${f.pad}` : '') + (f.mode === 'all' ? ' (all frames)' : '') + (f.instances ? ` (${f.instances} inst.)` : ''));
         let msg = 'Crop Precomp — ' + parts.join(' · ') + " (여백은 프리컴프의 'BANG Crop' > Pad)";
         if (res.warnings.length) msg += ` · ${res.warnings.length} warning(s)`;
         setStatus(msg, res.warnings.length ? 'default' : 'success');
@@ -387,6 +393,19 @@ document.getElementById('btn-precomp-fit').addEventListener('click', () => {
     }
   });
 });
+
+// Align to 박스가 좁으면 "Align to" 라벨을 숨긴다 (CEP 의 CEF 가 container query 를 지원하지 않아 JS 로 측정)
+(function initAlignSideFit() {
+  const side = document.querySelector('.al-side');
+  if (!side) return;
+  const fit = () => {
+    side.classList.remove('is-tight');
+    if (side.scrollWidth > side.clientWidth + 1) side.classList.add('is-tight');
+  };
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(side);
+  window.addEventListener('resize', fit);
+  fit();
+})();
 
 // ── Align 3D ──────────────────────────────────────────────────
 
@@ -440,11 +459,9 @@ function clonerFfxPath() {
 
 // 자동 갱신: 소스/클론 선택 중 '복제 개수' ≠ 현재 클론 수 이거나 '래스터라이즈' 체크 → 값이 1초간 안정되면 applyCloner
 (function initClonerAuto() {
-  const btn = document.getElementById('cl-auto');
-  btn.addEventListener('click', () => btn.setAttribute('aria-pressed', btn.getAttribute('aria-pressed') !== 'true' ? 'true' : 'false'));
   let last = null, stable = 0, busy = false;
   setInterval(() => {
-    if (busy || btn.getAttribute('aria-pressed') !== 'true') return;
+    if (busy) return;
     if (document.getElementById('status-text').textContent.startsWith('Cloner')) return;
     busy = true;
     evalScript('clonerPollState()', (result) => {

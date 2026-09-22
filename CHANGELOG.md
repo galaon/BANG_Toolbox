@@ -3,6 +3,14 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.3] — 2026-09-22
+
+### Changed
+- **Layout 카드 재배치** — 1행 `[Anchor 3×3] [Align 3×3]`, 2행 `[Null] [Align to]`(가로 스위치). 폭에 맞춰 두 열이 같이 늘고(상한 9.5rem) 좁아지면 `Align to` 라벨만 생략. 이전의 브레이크포인트 방식 제거.
+- **Tools** — `Quote / Align`, `Crop / Precomp` 두 줄 라벨. `All`·`자동` 토글 제거: 전체 프레임 샘플링은 프리컴프 안 `BANG Crop` 컨트롤러의 **`All Frames` 체크박스**로, 스크립트 클로너 자동 갱신은 항상 켜짐.
+- **Color** — 복사 시 미리보기 위에 "복사 완료!" 토스트(1.2초). 피커 아이콘을 mingcute `color-picker-fill` 로 교체.
+- **BANG Cloner v1.4 (Effect Controls)** — `Origin Preset` 3×3 아이콘을 Anchor 컨트롤과 같은 굵은 화살표 + 가운데 Align Center 아이콘으로(Drawbot 패스). 퀵 버튼 22px 정사각. `Nudge` 한 줄 11개(`-360 -90 -15 -2.5 -1 0 +1 +2.5 +15 +90 +360`). 그룹 이름에 글리프(`⋯ Linear` `▦ Grid` `◎ Radial` `↻ Step` `⚄ Random`), 선택되지 않은 배치 그룹은 접힌 채 **회색(비활성)** 으로 표시.
+
 ## [1.3.2] — 2026-09-22
 
 ### Changed
