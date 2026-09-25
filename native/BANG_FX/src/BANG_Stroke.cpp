@@ -297,7 +297,7 @@ static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& sit
     const float RMIN = 1.2f;
     const float MAG_MIN = 0.12f;        // 이보다 완만하면 법선을 믿을 수 없다
     const float T_MAX = 1.5f;           // 0.5 등고선이 1.5px 넘게 떨어져 있으면 경계 픽셀이 아니다
-    const float CORNER_COS = 0.87f;     // 주변 법선이 30° 넘게 벌어지면 꼭짓점
+    const float CORNER_COS = 0.70f;     // 주변 법선이 45° 넘게 벌어지면 꼭지점 (30° 기준이면 반지름 3~4px 곱선도 꼭지점으로 잡혔다)
     const int   R = 8;                  // 지지 평면을 모을 반경 (꼭짓점 주변 3px 는 제외되므로 넓게)
     const int   CR = 2;                 // 꼭짓점 판정 반경
     const int   DIL = 3;                // 무딘 꼭짓점 주변 제외 반경 = 최근접 씨앗 허용 반경
@@ -305,11 +305,12 @@ static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& sit
 
     // 알파가 0 이 아닌 구역(= 레이어 내용 + 여유)만 훑는다. 격자는 그보다 훨씬 넓다.
     bx0 = std::max(1, bx0 - 4); by0 = std::max(1, by0 - 4);
-    bx1 = std::min(w - 1, bx1 + 4); by1 = std::min(h - 1, by1 + 4);
+    // 법선 계산이 i±1 · i±w 를 읽으므로 마지막 행/열은 반드시 제외 (여기서 h-1 을 쓰면 버퍼 밖을 읽는다)
+    bx1 = std::min(w - 2, bx1 + 4); by1 = std::min(h - 2, by1 + 4);
     if (bx1 <= bx0 || by1 <= by0) return;
 
     // 1픽셀 차분은 거의 수평/수직인 변에서 법선을 축에 딱 붙게 양자화한다(10° 기울기가 0° 로 보임)
-    // → [1 4 6 4 1]/16 로 한 번 부드럽게 만든 알파에서 기울기를 잰다. 회전각과 무관하게 정확해진다.
+    // → [1 4 6 4 1]/16 로 한 번 부드럽게 만든 알파에서 기울기를 재다. 회전각과 무관하게 정확해진다.
     const auto _s0 = std::chrono::steady_clock::now();
     // 읽는 곳은 전부 먼저 쓰므로 0 초기화가 필요 없다 (큰 격자에서 memset 만 수 ms)
     std::unique_ptr<float[]> smBuf(new float[N]), tmpBuf(new float[N]);
@@ -321,13 +322,13 @@ static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& sit
             for (int x = bx0 - 2; x <= bx1 + 2; x++) {
                 if (x < 0 || x >= w) continue;
                 float a = 0;
-                for (int i = 0; i < 5; i++) { int xx = std::min(w - 1, std::max(0, x - 2 + i)); a += k[i] * alpha[(size_t)y * w + xx]; }
+                for (int i = 0; i < 5; i++) { const int xx = std::min(w - 1, std::max(0, x - 2 + i)); a += k[i] * alpha[(size_t)y * w + xx]; }
                 tmp[(size_t)y * w + x] = a;
             }
         }
         for (int y = by0; y <= by1; y++) for (int x = bx0; x <= bx1; x++) {
             float a = 0;
-            for (int i = 0; i < 5; i++) { int yy = std::min(h - 1, std::max(0, y - 2 + i)); a += k[i] * tmp[(size_t)yy * w + x]; }
+            for (int i = 0; i < 5; i++) { const int yy = std::min(h - 1, std::max(0, y - 2 + i)); a += k[i] * tmp[(size_t)yy * w + x]; }
             sm[(size_t)y * w + x] = a;
         }
     }
@@ -451,34 +452,50 @@ static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& sit
         if (ci < 0) continue;
         const int p0 = planeStart[ci], p1 = planeStart[ci + 1];
         if (p1 <= p0) continue;
+        // EDT 거리는 ‘씨앗 픽셀 중심’ 기준, 지지 평면은 ‘0.5 등고선(진짜 경계)’ 기준이라 0.5px 차이가 난다.
+        // 이걸 맞추지 않으면 보정된 구간과 그렇지 않은 구간의 경계가 1px 씩 엇갈려 외곽이 지저분해진다.
+        const float rT = r - 0.5f;                  // 경계까지의 실제 거리
         float best = -1e30f, b1x = 0, b1y = 0;
         for (int q = p0; q < p1; q++) {
             const float sb = planes[q].nx * (float)x + planes[q].ny * (float)y - planes[q].c;
             if (sb > best) { best = sb; b1x = planes[q].nx; b1y = planes[q].ny; }
         }
-        // 지지 평면 거리가 둘레거리보다 크면 볼록한 꼭짓점이 아니다(오목한 모서리) → 그대로 둔다
-        if (best > r + 0.5f) continue;
+        // 지지 평면 거리가 둘렉거리보다 크면 볼록한 꼭지점이 아니다(오목한 모서리) → 그대로 둔다
+        if (best > rT + 0.5f) continue;
         float best2 = -1e30f, b2x = 0, b2y = 0;
         for (int q = p0; q < p1; q++) {
             if (planes[q].nx * b1x + planes[q].ny * b1y > 0.94f) continue;
             const float sb = planes[q].nx * (float)x + planes[q].ny * (float)y - planes[q].c;
             if (sb > best2) { best2 = sb; b2x = planes[q].nx; b2y = planes[q].ny; }
         }
-        float dm = std::min(best, r);
-        if (best2 > -1e29f) {
-            const float cosFull = std::min(1.f, std::max(-1.f, b1x * b2x + b1y * b2y));
-            const float cpsi = std::sqrt(std::max(0.f, (1.f + cosFull) * 0.5f));     // cos(두 법선 사이 각 / 2)
-            if (mode == BS_CORNER_BEVEL || cpsi < 1e-4f || 1.f / std::max(cpsi, 1e-4f) > limit) {
-                float bvx = b1x + b2x, bvy = b1y + b2y;
-                const float bl = std::sqrt(bvx * bvx + bvy * bvy);
-                if (bl > 1e-6f) {
-                    bvx /= bl; bvy /= bl;
-                    const float db = (bvx * ((float)x - apexX[ci]) + bvy * ((float)y - apexY[ci])) / std::max(cpsi, 1e-4f);
-                    dm = std::max(dm, db);
-                }
+        // 두 번째 변을 못 찾았으면 꼭지점이라 볼 근거가 없다 — 한 평면만으로 당기면 제한 없는 뿔이 생긴다
+        if (best2 <= -1e29f) continue;
+        const float cosFull = std::min(1.f, std::max(-1.f, b1x * b2x + b1y * b2y));
+        const float cpsi = std::sqrt(std::max(0.f, (1.f + cosFull) * 0.5f));     // cos(두 법선 사이 각 / 2)
+        // 보정은 **꼭지점의 부채꼴 안**에서만 한다. 부채꼴 밖(= 그냥 변 옆)은 둘렉거리가 이미 정답이고,
+        // 거기까지 평면 값으로 덮어쓰면 평면 오차만큼 경계가 어긋나 외곽에 1px 계단이 생긴다.
+        // 부채꼴 경계에서는 두 값이 일치하므로 이음새가 없다.
+        float bsx = b1x + b2x, bsy = b1y + b2y;
+        const float bsl = std::sqrt(bsx * bsx + bsy * bsy);
+        if (bsl < 1e-6f) continue;
+        bsx /= bsl; bsy /= bsl;
+        const float vx = (float)x - apexX[ci], vy = (float)y - apexY[ci];
+        const float vlen = std::sqrt(vx * vx + vy * vy);
+        if (vlen < 1e-3f) continue;
+        if ((vx * bsx + vy * bsy) / vlen < cpsi - 0.02f) continue;      // 부채꼴 밖
+
+        const float maxOut = rT / std::max(limit, 1.f);     // Miter Limit 을 넘는 뻗음은 어떤 경우도 허용하지 않는다
+        float dm = std::max(std::min(best, rT), maxOut);
+        if (mode == BS_CORNER_BEVEL || cpsi < 1e-4f || 1.f / std::max(cpsi, 1e-4f) > limit) {
+            // 너무 날카로운 각은 꼭지점 추정 오차가 1/cpsi 로 증폭되므로 현 평면 대신 한계치로 자른다
+            if (cpsi < 0.25f) {
+                dm = std::max(dm, maxOut);
+            } else {
+                const float db = (bsx * vx + bsy * vy) / cpsi;
+                dm = std::max(dm, std::min(db, rT * 1.5f));      // 꼭지점을 잘라도 과도하게 파고들지는 않게
             }
         }
-        dist[i] = std::max(0.f, dm);
+        dist[i] = std::max(0.f, dm + 0.5f);         // 다시 EDT 기준으로
     }
     LOGF("  Sharpen setup %.1f ms | scan %.1f ms | corners=%d planes=%d",
          std::chrono::duration<double, std::milli>(_s1 - _s0).count(),
