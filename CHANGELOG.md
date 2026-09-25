@@ -3,6 +3,14 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.8] — 2026-09-25
+
+### Changed (BANG Stroke v1.3 — 구조 변경)
+- **획 하나 = 이펙트 하나.** `Stroke 1/2/3` 그룹과 `Enable` 체크박스를 없았습니다. 여러 겹은 **`BANG Stroke` 를 두 번 이상 적용**해서 만듭니다 — 두 번째 인스턴스는 첫 획이 포함된 알파를 입력으로 받으므로 자연히 **첫 획 바깥에** 그려집니다. 겹마다 두께·색·그라데이션·Softness·Blend 를 완전히 따로 줍니다.
+  - 이유: 그룹 전체를 회색처리하면 그 안의 `Enable` 까지 함께 비활성화되어 **Stroke 2/3 을 켜지 못하는 문제**가 있었습니다.
+- 파라미터는 평평하게: `Position`·`Width (px)`·`Offset (px)`·`Softness (px)`·`Opacity`·`Blend`·`Fill`·`Color` + `Gradient`·`Edge Noise`·`Body` 그룹. 그라데이션·Edge Noise·Body Opacity 등 v1.2 에서 추가된 기능은 그대로 유지.
+- v1.2 로 만든 `BANG Stroke` 인스턴스는 파라미터 구성이 바뀌었으므로 **다시 적용**해야 합니다.
+
 ## [1.3.7] — 2026-09-23
 
 ### Added (BANG Stroke v1.2 — 기능 확장)

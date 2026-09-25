@@ -22,10 +22,10 @@ resource 'PiPL' (16000) {
 #endif
 		AE_PiPL_Version { 2, 0 },
 		AE_Effect_Spec_Version { PF_PLUG_IN_VERSION, PF_PLUG_IN_SUBVERS },
-		AE_Effect_Version { 589825 /* 1.2.0 build 1 */ },
+		AE_Effect_Version { 622593 /* 1.3.0 build 1 */ },
 		AE_Effect_Info_Flags { 0 },
-		/* PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER | PF_OutFlag_SEND_UPDATE_PARAMS_UI */
-		AE_Effect_Global_OutFlags { 0x06000200 },
+		/* PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER */
+		AE_Effect_Global_OutFlags { 0x02000200 },
 		/* PF_OutFlag2_SUPPORTS_SMART_RENDER | FLOAT_COLOR_AWARE | SUPPORTS_THREADED_RENDERING | REVEALS_ZERO_ALPHA | PARAM_GROUP_START_COLLAPSED_FLAG */
 		AE_Effect_Global_OutFlags_2 { 0x08001488 },
 		AE_Effect_Match_Name { "BANG Stroke" },

@@ -34,15 +34,15 @@ native/
 
 ## 이펙트
 
-### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG · v1.2)
-알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))를 **한 번** 계산하고 그 거리장을 3겹의 획이 공유한다.
-- `Stroke 1/2/3` 그룹(같은 구성): `Enable`(SUPERVISE) · `Position`(Outside/Center/Inside) · `Width (px)` · `Offset (px)` · `Softness (px)` · `Opacity` · `Blend`(Normal/Multiply/Screen/Add) · `Fill`(Solid/Gradient, SUPERVISE) · `Color` · 하위 그룹 `Gradient`(`Color B` · `Gradient Type` Across Stroke/Linear/Radial · `Gradient Angle` · `Gradient Scale (px)` · `Reverse`).
-- `Edge Noise`: `Amount (px)` · `Scale (px)` · `Detail`(fBm 옥타브) · `Evolution`(각도 → 노이즈 3번째 축, 60° = 한 칸) · `Seed`. 거리장에 더하므로 모든 획이 같은 윤곽으로 흔들린다. 값 노이즈 fBm 은 ±1 을 못 채워 1.7배로 보정.
-- `Body`: `Body`(Keep/Hide) · `Body Opacity` · `Order`. 합성은 premultiplied 로 누적: behind 획들 → 본체 → front 획들(각 획의 front 여부 = Order 가 In Front 이거나 Position ≠ Outside). 블렌드 모드는 그 시점의 누적 색을 base 로 쓴다.
-- ECW: 꺼진 획 그룹과 Solid 일 때의 `Gradient` 하위 그룹을 `PF_UpdateParamUI` 로 회색(+접기) — `PF_OutFlag_SEND_UPDATE_PARAMS_UI` + `AEGP_RegisterWithAEGP` 필요.
+### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG · v1.3)
+알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))로 **획 하나**를 그린다.
+- **여러 겹 = 이펙트를 여러 번 적용**. 두 번째 인스턴스는 첫 획이 포함된 알파를 입력으로 받으므로 SDF 가 그 바깥 윤곽을 따라 다시 계산된다 — 별도 로직이 필요 없다. (v1.2 의 `Stroke 1/2/3` 그룹은 그룹을 회색처리하면 그 안 `Enable` 까지 비활성화돼 폐기.)
+- 파라미터(평평): `Position`(Outside/Center/Inside) · `Width (px)` · `Offset (px)` · `Softness (px)` · `Opacity` · `Blend`(Normal/Multiply/Screen/Add) · `Fill`(Solid/Gradient) · `Color` · 그룹 `Gradient`(`Color B` · `Gradient Type` Across Stroke/Linear/Radial · `Gradient Angle` · `Gradient Scale (px)` · `Reverse`).
+- `Edge Noise`: `Amount (px)` · `Scale (px)` · `Detail`(fBm 옥타브) · `Evolution`(각도 → 노이즈 3번째 축, 60° = 한 칸) · `Seed`. 거리장에 더해 가장자리를 흔든다. 값 노이즈 fBm 은 ±1 을 못 채워 1.7배로 보정.
+- `Body`: `Body`(Keep/Hide) · `Body Opacity` · `Order`. 합성은 premultiplied 누적: behind 획 → 본체 → front 획(front 여부 = Order 가 In Front 이거나 Position ≠ Outside). 여기서 "본체" = 이 인스턴스의 입력이므로 아래쪽 획들까지 포함된다. 블렌드 모드는 그 시점의 누적 색을 base 로 쓴다.
 - SmartFX, 8/16/32bpc, 멀티프레임 렌더 OK. 출력 버퍼를 (오프셋+두께+부드러움+2) 만큼 확장(`PF_OutFlag_I_EXPAND_BUFFER`).
 - 거리장은 **출력 영역 + 여백 격자**에서 계산(AE 가 넘기는 입력 world 는 레이어 내용 경계로 잘려 있어 그 밖은 투명으로 채움).
-- 안쪽/중앙 획은 항상 본체 위에 합성(Layer Style 과 동일), '합성 순서'는 바깥 획에만 적용.
+- 안쪽/중앙 획은 항상 본체 위에 합성(Layer Style 과 동일), Order 는 바깥 획에만 적용.
 - 다운샘플(해상도 1/2 등) 시 px 파라미터를 비율로 보정.
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)
