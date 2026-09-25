@@ -47,10 +47,17 @@ static PF_Err About(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* param
     return PF_Err_NONE;
 }
 
+static AEGP_PluginID g_plugin_id = 0;
+static bool          g_registered = false;
+
 static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     out_data->my_version = PF_VERSION(BANG_STROKE_MAJOR, BANG_STROKE_MINOR, BANG_STROKE_BUG, BANG_STROKE_STAGE, BANG_STROKE_BUILD);
-    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER;
+    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+    if (!g_registered && in_data->appl_id != kAppID_Premiere) {
+        AEGP_SuiteHandler suites(in_data->pica_basicP);
+        if (suites.UtilitySuite3()->AEGP_RegisterWithAEGP(NULL, "BANG Stroke", &g_plugin_id) == A_Err_NONE) g_registered = true;
+    }
     out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER | PF_OutFlag2_FLOAT_COLOR_AWARE |
                            PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_REVEALS_ZERO_ALPHA |
                            PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG;   // 그룹 flags 존중 (하위 그룹은 접힌 채 시작)
@@ -66,19 +73,19 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     #define TOPIC_END(ID)          do { AEFX_CLR_STRUCT(def); PF_END_TOPIC(ID); } while (0)
     #define FSLIDER(NAME, VMIN, VMAX, SMIN, SMAX, DFLT, PREC, DISP, ID) do { AEFX_CLR_STRUCT(def); PF_ADD_FLOAT_SLIDERX(NAME, VMIN, VMAX, SMIN, SMAX, DFLT, PREC, DISP, 0, ID); } while (0)
 
+    FSLIDER("Width (px)", 0, 1000, 0, 60, 6, PF_Precision_TENTHS, 0, BS_WIDTH);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Position", 3, BS_POS_OUTSIDE, "Outside|Center|Inside", BS_POSITION);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Corner", 3, BS_CORNER_ROUND, "Round|Miter|Bevel", BS_CORNER);
     FSLIDER("Miter Limit", 1, 10, 1, 10, 4, PF_Precision_TENTHS, 0, BS_MITER_LIMIT);
-    FSLIDER("Width (px)", 0, 1000, 0, 60, 6, PF_Precision_TENTHS, 0, BS_WIDTH);
     FSLIDER("Offset (px)", -500, 500, -20, 20, 0, PF_Precision_TENTHS, 0, BS_OFFSET);
     FSLIDER("Softness (px)", 0, 200, 0, 20, 0, PF_Precision_TENTHS, 0, BS_SOFTNESS);
     FSLIDER("Opacity", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BS_OPACITY);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Blend", 4, BS_BLEND_NORMAL, "Normal|Multiply|Screen|Add", BS_BLEND);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Fill", 2, BS_FILL_SOLID, "Solid|Gradient", BS_FILL);
+    PF_ADD_POPUPX("Fill", 2, BS_FILL_SOLID, "Solid|Gradient", PF_ParamFlag_SUPERVISE, BS_FILL);
     AEFX_CLR_STRUCT(def);
     PF_ADD_COLOR("Color", PF_MAX_CHAN8, PF_MAX_CHAN8, PF_MAX_CHAN8, BS_COLOR);
 
@@ -121,6 +128,33 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
 
     out_data->num_params = BS_NUM_PARAMS;
     return err;
+}
+
+// ── ECW 상태: Fill 이 Solid 면 Gradient 그룹을 회색으로 ─────────
+//  주의: 회색처리하는 그룹 안에 ‘다시 켜는 버튼’ 을 두면 안 된다(v1.2 에서 Enable 을 그룹 안에 뒄다가
+//  사용자가 Stroke 2/3 을 영영 켜지 못했다). 여기서 Fill 은 그룹 밖에 있으므로 안전하다.
+static PF_Err UpdateParamsUI(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[])
+{
+    if (!g_registered) return PF_Err_NONE;
+    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+    const bool grad = params[BS_FILL]->u.pd.value == BS_FILL_GRADIENT;
+    PF_ParamDef g = *params[BS_G_GRAD];
+    g.param_type = PF_Param_GROUP_START;
+    if (grad) { g.ui_flags &= ~PF_PUI_DISABLED; g.flags &= ~PF_ParamFlag_COLLAPSE_TWIRLY; }
+    else      { g.ui_flags |=  PF_PUI_DISABLED; g.flags |=  PF_ParamFlag_COLLAPSE_TWIRLY; }
+    ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, BS_G_GRAD, &g));
+    return err;
+}
+
+static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], const PF_UserChangedParamExtra* extra)
+{
+    if (extra->param_index == BS_FILL) {
+        PF_Err err = UpdateParamsUI(in_data, out_data, params);
+        out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+        return err;
+    }
+    return PF_Err_NONE;
 }
 
 // ── 프리렌더: 파라미터 읽기, 여백 계산, 입력 체크아웃, 출력 영역 확장 ──
@@ -796,6 +830,8 @@ PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutData* out_data, PF_Param
             case PF_Cmd_ABOUT:            err = About(in_data, out_data, params, output); break;
             case PF_Cmd_GLOBAL_SETUP:     err = GlobalSetup(in_data, out_data, params, output); break;
             case PF_Cmd_PARAMS_SETUP:     err = ParamsSetup(in_data, out_data, params, output); break;
+            case PF_Cmd_UPDATE_PARAMS_UI: err = UpdateParamsUI(in_data, out_data, params); break;
+            case PF_Cmd_USER_CHANGED_PARAM: err = UserChangedParam(in_data, out_data, params, (const PF_UserChangedParamExtra*)extra); break;
             case PF_Cmd_SMART_PRE_RENDER: err = PreRender(in_data, out_data, (PF_PreRenderExtra*)extra); break;
             case PF_Cmd_SMART_RENDER:     err = SmartRender(in_data, out_data, (PF_SmartRenderExtra*)extra); break;
             default: break;

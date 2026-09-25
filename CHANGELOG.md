@@ -3,6 +3,23 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.4.0] — 2026-09-26
+
+### Added — 새 네이티브 이펙트 **BANG Gradient**
+AE 기본 Ramp 는 색이 둘뿐이고 sRGB 로만 섞이며 띄는 Ramp Scatter 로만 가립니다. 그 빈틈을 채운 이펙트입니다.
+- **정지점 최대 8개** — 각각 색·위치·불투명도. `Stops` 를 바꾸면 위치가 고르게 자동 재배치되고, 안 쓰는 정지점은 회색으로 숨습니다.
+- **모양 6가지** — `Linear` / `Radial` / `Angular`(원뿔) / `Diamond` / `Reflected` / **`Contour`**. Contour 는 알파 경계까지의 거리를 따라 칠하므로 글자·도형 윤곽을 따라 흐르는 그라데이션을 만듭니다(BANG Stroke 와 같은 거리장).
+- **보간 색공간** — `sRGB` / `Linear` / **`OKLab`**(중간에서 밝기가 꾸지지 않음, 기본값) / `OKLCh`(색상환을 돌아 무지개처럼 — 짧은 길·긴 길).
+- **반복** — `Clamp/Repeat/Mirror` + `Cycles`·`Phase`·`Reverse`, `Smoothness`(정지점 사이 이징).
+- **Dither** — 8bpc 로 떨어질 때 생기는 띄를 없애는 미세 잡음(기본 40%).
+- **원본과 합성** — `Blend With Original`(Normal/Multiply/Screen/Add/Overlay) + `Amount`, `Preserve Alpha`(레이어 알파 안에서만).
+- 8/16/32bpc · SmartFX · 멀티프레임 렌더. 패널 Tools 에 `Gradient` 타일 추가.
+
+### Changed (BANG Stroke)
+- 파라미터 순서를 **Width → Position → Corner → Miter Limit → Offset → …** 로 바꿨습니다(자주 만지는 것을 위로).
+- `Fill` 이 **Solid 이면 `Gradient` 그룹이 회색으로 접힙니다**. Gradient 로 바꾸면 바로 펼쳐집니다.
+- ⚠ 파라미터 순서가 바뀜 이전 버전으로 만든 `BANG Stroke` 인스턴스는 **다시 적용**해야 합니다.
+
 ## [1.3.11] — 2026-09-25
 
 ### Fixed (BANG Stroke — 모서리 품질·안정성)

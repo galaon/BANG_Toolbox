@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BANG Stroke — After Effects effect plug-in (x64, VS 2022 v143)
+  SDK 위치: $(AE_SDK_DIR) 환경변수 또는 기본값 ..\..\..\sdk\AfterEffectsSDK_26.5_win\Examples (저장소 밖)
+  출력:     ..\out\$(Configuration)\BANG_Gradient.aex   (또는 $(AE_PLUGIN_BUILD_DIR) 지정 시 그곳)
+-->
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{B4A6C1E2-5D0F-4C7A-9E31-0BA060000001}</ProjectGuid>
+    <RootNamespace>BANG_Gradient</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <AE_SDK_DIR Condition="'$(AE_SDK_DIR)'==''">$(MSBuildThisFileDirectory)..\..\..\sdk\AfterEffectsSDK_26.5_win\Examples</AE_SDK_DIR>
+    <AE_PLUGIN_BUILD_DIR Condition="'$(AE_PLUGIN_BUILD_DIR)'==''">$(MSBuildThisFileDirectory)..\out\$(Configuration)</AE_PLUGIN_BUILD_DIR>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(AE_PLUGIN_BUILD_DIR)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\out\obj\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetExt>.aex</TargetExt>
+    <IgnoreImportLibrary>true</IgnoreImportLibrary>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)src;$(AE_SDK_DIR)\Headers;$(AE_SDK_DIR)\Headers\SP;$(AE_SDK_DIR)\Headers\Win;$(AE_SDK_DIR)\Resources;$(AE_SDK_DIR)\Util;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;NOMINMAX;$(BANG_FX_DEFINES);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <PrecompiledHeader></PrecompiledHeader>
+    </ClCompile>
+    <Link>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <ImportLibrary>$(IntDir)$(TargetName).lib</ImportLibrary>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <!-- PiPL: .r → (cl /EP) → .rr → PiPLtool → .rrc → (cl /EP) → .rc → rc.exe -->
+    <CustomBuild Include="src\BANG_GradientPiPL.r">
+      <Message>Compiling the PiPL</Message>
+      <Command>cl /I "$(AE_SDK_DIR)\Headers" /EP "%(FullPath)" &gt; "$(IntDir)%(Filename).rr"
+"$(AE_SDK_DIR)\Resources\PiPLTool" "$(IntDir)%(Filename).rr" "$(IntDir)%(Filename).rrc"
+cl /D "MSWindows" /EP "$(IntDir)%(Filename).rrc" &gt; "$(MSBuildThisFileDirectory)%(Filename).rc"
+</Command>
+      <Outputs>$(MSBuildThisFileDirectory)%(Filename).rc;%(Outputs)</Outputs>
+    </CustomBuild>
+    <ResourceCompile Include="BANG_GradientPiPL.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\BANG_Gradient.cpp" />
+    <ClCompile Include="$(AE_SDK_DIR)\Util\AEGP_SuiteHandler.cpp" />
+    <ClCompile Include="$(AE_SDK_DIR)\Util\MissingSuiteError.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\BANG_Gradient.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -15,7 +15,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_STROKE_MAJOR   1
-#define BANG_STROKE_MINOR   4
+#define BANG_STROKE_MINOR   5
 #define BANG_STROKE_BUG     0
 #define BANG_STROKE_STAGE   PF_Stage_DEVELOP
 #define BANG_STROKE_BUILD   1
@@ -23,10 +23,10 @@
 // 파라미터 인덱스 (0 = 입력 레이어)
 enum {
     BS_INPUT = 0,
+    BS_WIDTH,           // Width (px)
     BS_POSITION,        // Position: Outside | Center | Inside
     BS_CORNER,          // Corner: Round | Miter | Bevel
     BS_MITER_LIMIT,     // Miter Limit (Miter 일 때 뾰족함 한계, 넘으면 Bevel)
-    BS_WIDTH,           // Width (px)
     BS_OFFSET,          // Offset (px) — 가장자리에서 띄우기
     BS_SOFTNESS,        // Softness (px)
     BS_OPACITY,         // Opacity (%)

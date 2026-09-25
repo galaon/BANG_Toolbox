@@ -48,7 +48,18 @@ native/
 - 성능(1440×2560 텍스트 · 획 60px, 거리장 계산 기준): Round 10 ms · Bevel 27 ms · Miter 37 ms. 핵심은 ① 격자 = 입력∪출력 영역(예전엔 출력+margin 사방, Miter 는 margin 이 Limit 배라 2.5배였다), ② 획이 닿지 않는 쪽 거리장은 EDT·보정 생략(`bandLo/bandHi`), ③ 지지 평면을 꼭지점당 한 번 모으고 같은 변끼리 평균내 2~4개로 줄인 것(띄 픽셀마다 17×17 ×2 → 175 ms가 3 ms 로). 평면을 평균 대신 ‘가장 바깥’ 을 고르면 AA 잡음만큼 밀려 모서리가 1~2px 과하게 뻗는다. edt2d 병렬화도 해 봤으나 열 패스가 대역폭 병목이라 이득이 적고 작은 격자에선 오히려 느려져 되돌렸다.
 - 모서리 보정의 안전장치(없으면 글자에서 바로 티난다): ① 서로 다른 변 **둘**을 찾은 픽셀만 보정(하나만 있으면 Limit 가 적용되지 않아 뿔이 생긴다), ② `dm ≥ r/limit` 로 뻗음을 하드 클램프, ③ cos(각/2) < 0.25 인 날카로운 각은 베벨 현(1/cos 발산) 대신 한계치로 절단, ④ **꼭지점 부채꼴 밖은 손대지 않음**(부채꼴 경계에선 평면 거리 = 둘렉거리 라 이음새가 없다. 이걸 안 하면 외곽에 1px 계단이 줄지어 생긴다), ⑤ 꼭지점 판정 45°(30° 면 곱선이 꼭지점으로 잡힌다).
 - ⚠ 법선 계산 루프는 `i±1`·`i±w` 를 읽는다 — 내용 상자를 즐일 때 끝을 `w-2`/`h-2` 로 막지 않으면 버퍼 밖을 읽어 AE 가 죽는다(1.3.10 에서 실제로 발생).
+- Stroke 파라미터 순서: Width → Position → Corner → Miter Limit → Offset → … (v1.5). `Fill` 은 SUPERVISE 로, Solid 이면 `Gradient` 그룹을 회색+접음 — 회색 처리하는 그룹 안에 다시 켜는 컨트롤을 두지 않는다는 규칙은 그대로(Fill 은 그룹 밖).
 - 프로파일링: `build-native.ps1 -Install -Defines BANG_FX_LOG` → `%TEMP%\bang_stroke.log` 에 BuildSDF·Sharpen 단계별 시간과 꼭지점·평면 개수가 쌓인다.
+
+### BANG Gradient (`matchName "BANG Gradient"`, 카테고리 BANG · v1.0)
+정지점 최대 8개짜리 그라데이션. AE SDK 에는 그라데이션 파라미터 타입이 없으므로
+정지점마다 (색 + 위치 + 불투명도) 세 파라미터를 깔고, `Stops` 밖의 것은 `PF_UpdateParamUI` 로 회색 처리한다.
+- `Stops` 를 바꾸면 USER_CHANGED_PARAM 에서 위치를 고르게 다시 쓴다 — 값 변경은 `params[i]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE`.
+- 모양: Linear/Radial/Angular/Diamond/Reflected 는 Start·End 두 점에서 t 를 구하고,
+  **Contour** 는 알파 경계까지의 거리(Felzenszwalb EDT, BANG Stroke 와 같은 코드)를 `Contour Span` 으로 나눠 t 로 쓴다.
+- 보간: sRGB 그대로 / 선형 RGB / OKLab / OKLCh(극좌표, 짧은·긴 색상 경로). OKLab 변환은 Björn Ottosson 계수.
+- Dither 는 t 에 ±0.5LSB 크기의 해시 잡음을 더해 8bpc 띄를 지운다.
+- 버퍼 확장이 없으므로 `I_EXPAND_BUFFER` 없이 PiPL OutFlags = DEEP_COLOR_AWARE | SEND_UPDATE_PARAMS_UI (0x06000000).
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)
 소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 출력에 over 합성(Motion Tile 모델). 파라미터(영문, v1.2 = 그룹 5개):

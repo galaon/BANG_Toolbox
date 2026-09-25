@@ -8,7 +8,7 @@
 resource 'PiPL' (16000) {
 	{
 		Kind { AEEffect },
-		Name { "BANG Stroke" },
+		Name { "BANG Gradient" },
 		Category { "BANG" },
 #ifdef AE_OS_WIN
     #if defined(AE_PROC_INTELx64)
@@ -22,13 +22,13 @@ resource 'PiPL' (16000) {
 #endif
 		AE_PiPL_Version { 2, 0 },
 		AE_Effect_Spec_Version { PF_PLUG_IN_VERSION, PF_PLUG_IN_SUBVERS },
-		AE_Effect_Version { 688129 /* 1.5.0 build 1 */ },
+		AE_Effect_Version { 524289 /* 1.0.0 build 1 */ },
 		AE_Effect_Info_Flags { 0 },
-		/* PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_I_EXPAND_BUFFER | PF_OutFlag_SEND_UPDATE_PARAMS_UI */
-		AE_Effect_Global_OutFlags { 0x06000200 },
-		/* PF_OutFlag2_SUPPORTS_SMART_RENDER | FLOAT_COLOR_AWARE | SUPPORTS_THREADED_RENDERING | REVEALS_ZERO_ALPHA | PARAM_GROUP_START_COLLAPSED_FLAG */
-		AE_Effect_Global_OutFlags_2 { 0x08001488 },
-		AE_Effect_Match_Name { "BANG Stroke" },
+		/* PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_SEND_UPDATE_PARAMS_UI */
+		AE_Effect_Global_OutFlags { 0x06000000 },
+		/* PF_OutFlag2_SUPPORTS_SMART_RENDER | FLOAT_COLOR_AWARE | SUPPORTS_THREADED_RENDERING | PARAM_GROUP_START_COLLAPSED_FLAG */
+		AE_Effect_Global_OutFlags_2 { 0x08001408 },
+		AE_Effect_Match_Name { "BANG Gradient" },
 		AE_Reserved_Info { 8 },
 		AE_Effect_Support_URL { "https://github.com/galaon/BANG_Toolbox" }
 	}

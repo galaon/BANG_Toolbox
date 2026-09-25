@@ -526,6 +526,7 @@ function applyScriptCloner() {
 // Cloner 타일: 네이티브 "BANG Cloner"(인스턴스 렌더, 타이밍 정확) 우선, 없으면 스크립트 클로너
 document.getElementById('btn-cloner').addEventListener('click', () => applyNative('BANG Cloner', 'Cloner', applyScriptCloner));
 document.getElementById('btn-stroke').addEventListener('click', () => applyNative('BANG Stroke', 'Stroke'));
+document.getElementById('btn-gradient').addEventListener('click', () => applyNative('BANG Gradient', 'Gradient'));
 
 // ── Bento Grid (BentoGrid.jsx 이식) ───────────────────────────
 
