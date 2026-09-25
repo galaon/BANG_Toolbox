@@ -3,6 +3,27 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.10] — 2026-09-25
+
+### Performance (BANG Stroke v1.5 — Miter 최적화)
+1440×2560 텍스트 레이어 · 획 60px 기준 거리장 계산 시간(프레임당):
+
+| Corner | 이전 | 지금 |
+|---|---|---|
+| Round | 19.3 ms | **10.1 ms** |
+| Miter | 291.0 ms | **37.0 ms** (7.9×) |
+| Bevel | 50.4 ms | **26.8 ms** |
+
+- **거리장 격자를 꼭 필요한 만큼만** — 예전엔 출력 영역을 여백(margin)만큼 사방으로 넓혔는데, Miter 는 그 여백이 `Miter Limit` 배라 격자가 2.5배까지 커졌습니다. 씨앗(전경 픽셀)은 어차피 입력 영역 안에만 있으므로 이제 입력∪출력 영역만 씁니다.
+- **획이 닿지 않는 쪽 거리장은 아예 계산하지 않음** — Outside 획이면 안쪽 거리장(EDT + 모서리 보정)을 통째 건너뜁니다. Round 도 같이 빨라졌습니다.
+- **모서리 평면을 꼭지점당 한 번만 수집** — 같은 변에서 나온 평면은 평균내서 보통 2~4개로 줍니다. 예전엔 띄 픽셀마다 17×17 창을 두 번씩 훑어 이 단계에만 175 ms 가 들었고, 지금은 3 ms 입니다.
+- 꼭지점 인접 여부를 미리 계산해 띄 픽셀당 조회 한 번으로 끝내고, 법선·꼭지점 계산은 레이어 내용 상자 안으로 제한했습니다.
+
+렌더 결과는 바뀜지 않았습니다 — 회전 0°/10°/22.5°/45° 마이터 꼭지점, Outside/Center/Inside 획 폭, 十자 도형의 볼록·오목 모서리, 그라데이션 불투명도 램프 모두 최적화 전과 동일한 픽셀값을 확인했습니다.
+
+### Added (개발)
+- `native/build-native.ps1 -Defines BANG_FX_LOG` — 단계별 소요 시간을 `%TEMP%\bang_stroke.log` 에 기록하는 프로파일링 빌드.
+
 ## [1.3.9] — 2026-09-25
 
 ### Added (BANG Stroke v1.4)

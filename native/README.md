@@ -45,6 +45,8 @@ native/
 - 거리장은 **출력 영역 + 여백 격자**에서 계산(AE 가 넘기는 입력 world 는 레이어 내용 경계로 잘려 있어 그 밖은 투명으로 채움).
 - 안쪽/중앙 획은 항상 본체 위에 합성(Layer Style 과 동일), Order 는 바깥 획에만 적용.
 - 다운샘플(해상도 1/2 등) 시 px 파라미터를 비율로 보정.
+- 성능(1440×2560 텍스트 · 획 60px, 거리장 계산 기준): Round 10 ms · Bevel 27 ms · Miter 37 ms. 핵심은 ① 격자 = 입력∪출력 영역(예전엔 출력+margin 사방, Miter 는 margin 이 Limit 배라 2.5배였다), ② 획이 닿지 않는 쪽 거리장은 EDT·보정 생략(`bandLo/bandHi`), ③ 지지 평면을 꼭지점당 한 번 모으고 같은 변끼리 평균내 2~4개로 줄인 것(띄 픽셀마다 17×17 ×2 → 175 ms가 3 ms 로). 평면을 평균 대신 ‘가장 바깥’ 을 고르면 AA 잡음만큼 밀려 모서리가 1~2px 과하게 뻗는다. edt2d 병렬화도 해 봤으나 열 패스가 대역폭 병목이라 이득이 적고 작은 격자에선 오히려 느려져 되돌렸다.
+- 프로파일링: `build-native.ps1 -Install -Defines BANG_FX_LOG` → `%TEMP%\bang_stroke.log` 에 BuildSDF·Sharpen 단계별 시간과 꼭지점·평면 개수가 쌓인다.
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)
 소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 출력에 over 합성(Motion Tile 모델). 파라미터(영문, v1.2 = 그룹 5개):

@@ -17,8 +17,10 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdint>
+#include <memory>
 #include <cstdio>
 #include <cstdarg>
+#include <chrono>
 
 #ifdef AE_OS_WIN
 #include <windows.h>
@@ -173,6 +175,16 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
 
     // 바깥으로 뻗는 최대 거리 = 오프셋 + 두께(위치에 따라) + 부드러움 + 노이즈 + 여유
     PF_FpLong reach = std::max(0.0, d->offset) + d->softness + ((d->position == BS_POS_INSIDE) ? 0.0 : d->width);
+    // 획이 실제로 닿는 거리 범위 (모서리 보정을 쓸데없는 쪽 거리장에는 돌리지 않기 위해)
+    {
+        PF_FpLong half = d->width * 0.5, ctr;
+        if (d->position == BS_POS_INSIDE)      ctr = -d->offset - half;
+        else if (d->position == BS_POS_CENTER) ctr = d->offset;
+        else                                   ctr = d->offset + half;
+        d->bandLo = ctr - half - d->softness - d->noiseAmount;
+        d->bandHi = ctr + half + d->softness + d->noiseAmount;
+    }
+
     // 마이터는 모서리가 한계 배까지 뻗는다 — 다만 두꺼운 획에서 격자가 폭발하지 않게 +1000px 로 상한
     if (d->corner == BS_CORNER_MITER) reach = std::min(reach * d->miterLimit, reach + 1000.0);
     d->margin = (A_long)std::ceil(reach + d->noiseAmount + 2.0);
@@ -269,13 +281,16 @@ static void edt2d(std::vector<float>& g, int w, int h, std::vector<int>* site = 
 //  이진 마스크의 계단 때문에 "최근접 씨앗의 부채꼴"만으로는 회전한 도형의 꼭짓점 각도를 못 맞춘다
 //  (0°/45° 는 맞고 10°/22.5° 는 과하거나 모자람). 그래서 **안티에일리어싱된 알파의 기울기**로
 //  경계 픽셀마다 바깥 법선 n 과 0.5 등고선까지의 거리 t 를 구한다 — 회전에 무관하게 정확하다.
-//    · corner 픽셀 = 주변 법선이 크게 벌어지는 곳(볼록 꼭짓점). 최근접 씨앗이 corner 일 때만 손댄다
+//    · corner 픽셀 = 주변 법선이 크게 벌어지는 곳(볼록 꼭짓점). 최근접 씨앗이 corner 근처일 때만 손댄다
 //      → 직선 구간(두께 유지)과 오목한 모서리(원래 각짐)는 건드리지 않는다.
-//    · Miter: d = max over 주변 '깨끗한' 변 b 의 지지 평면 거리 (둥근 거리보다 작아 모서리가 뻗는다)
+//    · Miter: d = max over 꼭짓점 주변 '깨끗한' 변의 지지 평면 거리 (둥근 거리보다 작아 모서리가 뻗는다)
 //    · Bevel: 양 끝 법선 n1, n2 의 이등분 평면을 더해 꼭짓점을 잘라낸다. Miter Limit 초과 시에도 동일.
+//  성능: 평면을 **꼭짓점마다 한 번** 모아 법선이 같은 것끼리 합쳐 두고(보통 2~4개), 띠 픽셀은
+//  그 몇 개만 계산한다. 예전처럼 픽셀마다 17×17 창을 두 번 훑으면 텍스트 한 장에 170ms 가 든다.
 //  dist 는 실제 거리(in-place), maxReach 밖은 손대지 않는다. sgn = +1 바깥 거리장 / −1 안쪽 거리장.
 static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& site, const std::vector<float>& alpha,
-                           int w, int h, A_long mode, float limit, float maxReach, float sgn)
+                           int w, int h, A_long mode, float limit, float maxReach, float sgn,
+                           int bx0, int by0, int bx1, int by1)
 {
     const size_t N = (size_t)w * h;
     if (site.size() != N || alpha.size() != N) return;
@@ -283,29 +298,44 @@ static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& sit
     const float MAG_MIN = 0.12f;        // 이보다 완만하면 법선을 믿을 수 없다
     const float T_MAX = 1.5f;           // 0.5 등고선이 1.5px 넘게 떨어져 있으면 경계 픽셀이 아니다
     const float CORNER_COS = 0.87f;     // 주변 법선이 30° 넘게 벌어지면 꼭짓점
-    const int   R = 8;                  // 지지 평면을 모을 반경 (꼭짓점 주변 2~3px 는 corner 로 제외되므로 넓게)
+    const int   R = 8;                  // 지지 평면을 모을 반경 (꼭짓점 주변 3px 는 제외되므로 넓게)
     const int   CR = 2;                 // 꼭짓점 판정 반경
+    const int   DIL = 3;                // 무딘 꼭짓점 주변 제외 반경 = 최근접 씨앗 허용 반경
+    const int   MAXPL = 8;              // 꼭짓점당 보관할 평면 수
+
+    // 알파가 0 이 아닌 구역(= 레이어 내용 + 여유)만 훑는다. 격자는 그보다 훨씬 넓다.
+    bx0 = std::max(1, bx0 - 4); by0 = std::max(1, by0 - 4);
+    bx1 = std::min(w - 1, bx1 + 4); by1 = std::min(h - 1, by1 + 4);
+    if (bx1 <= bx0 || by1 <= by0) return;
 
     // 1픽셀 차분은 거의 수평/수직인 변에서 법선을 축에 딱 붙게 양자화한다(10° 기울기가 0° 로 보임)
     // → [1 4 6 4 1]/16 로 한 번 부드럽게 만든 알파에서 기울기를 잰다. 회전각과 무관하게 정확해진다.
-    std::vector<float> sm((size_t)w * h, 0.f), tmp((size_t)w * h, 0.f);
+    const auto _s0 = std::chrono::steady_clock::now();
+    // 읽는 곳은 전부 먼저 쓰므로 0 초기화가 필요 없다 (큰 격자에서 memset 만 수 ms)
+    std::unique_ptr<float[]> smBuf(new float[N]), tmpBuf(new float[N]);
+    float* sm = smBuf.get(); float* tmp = tmpBuf.get();
     {
         const float k[5] = { 1.f / 16, 4.f / 16, 6.f / 16, 4.f / 16, 1.f / 16 };
-        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-            float a = 0;
-            for (int i = 0; i < 5; i++) { int xx = std::min(w - 1, std::max(0, x - 2 + i)); a += k[i] * alpha[(size_t)y * w + xx]; }
-            tmp[(size_t)y * w + x] = a;
+        for (int y = by0 - 2; y <= by1 + 2; y++) {
+            if (y < 0 || y >= h) continue;
+            for (int x = bx0 - 2; x <= bx1 + 2; x++) {
+                if (x < 0 || x >= w) continue;
+                float a = 0;
+                for (int i = 0; i < 5; i++) { int xx = std::min(w - 1, std::max(0, x - 2 + i)); a += k[i] * alpha[(size_t)y * w + xx]; }
+                tmp[(size_t)y * w + x] = a;
+            }
         }
-        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+        for (int y = by0; y <= by1; y++) for (int x = bx0; x <= bx1; x++) {
             float a = 0;
             for (int i = 0; i < 5; i++) { int yy = std::min(h - 1, std::max(0, y - 2 + i)); a += k[i] * tmp[(size_t)yy * w + x]; }
             sm[(size_t)y * w + x] = a;
         }
     }
 
-    std::vector<float> nx(N, 0.f), ny(N, 0.f), tt(N, 0.f);
-    std::vector<unsigned char> flag(N, 0);      // 0 없음 · 1 깨끗한 변 · 2 꼭짓점
-    for (int y = 1; y < h - 1; y++) for (int x = 1; x < w - 1; x++) {
+    std::unique_ptr<float[]> nxBuf(new float[N]), nyBuf(new float[N]), ttBuf(new float[N]);
+    float* nx = nxBuf.get(); float* ny = nyBuf.get(); float* tt = ttBuf.get();   // flag != 0 인 곳만 읽는다
+    std::vector<unsigned char> flag(N, 0);      // 0 없음 · 1 깨끗한 변 · 2 꼭짓점 · 3 꼭짓점 주변(평면 출처에서 제외)
+    for (int y = by0; y <= by1; y++) for (int x = bx0; x <= bx1; x++) {
         const size_t i = (size_t)y * w + x;
         const float gx = (sm[i + 1] - sm[i - 1]) * 0.5f;
         const float gy = (sm[i + w] - sm[i - w]) * 0.5f;
@@ -317,107 +347,143 @@ static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& sit
         tt[i] = t;
         flag[i] = 1;
     }
-    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-        const size_t i = (size_t)y * w + x;
-        if (!flag[i]) continue;
+    std::vector<int> edgePix;                                   // 경계 픽셀만 추려 이후 패스를 가볍게
+    edgePix.reserve(4096);
+    for (int y = by0; y <= by1; y++) for (int x = bx0; x <= bx1; x++)
+        if (flag[(size_t)y * w + x]) edgePix.push_back(y * w + x);
+
+    for (size_t e = 0; e < edgePix.size(); e++) {
+        const int i = edgePix[e];
+        const int x = i % w, y = i / w;
         float worst = 1.f;
         for (int dy = -CR; dy <= CR; dy++) {
             const int yy = y + dy; if (yy < 0 || yy >= h) continue;
             for (int dx = -CR; dx <= CR; dx++) {
                 const int xx = x + dx; if (xx < 0 || xx >= w) continue;
                 const size_t j = (size_t)yy * w + xx;
-                if (flag[j] != 1) continue;
+                if (!flag[j]) continue;
                 const float c = nx[i] * nx[j] + ny[i] * ny[j];
                 if (c < worst) worst = c;
             }
         }
         if (worst < CORNER_COS) flag[i] = 2;
     }
-    // 무딜어진 꼭지점 주변의 법선은 이등분선 쪽으로 기울어져 있어 지지 평면으로 쓰면 마이터가 뭐뜿해진다
-    // → 꼭지점에서 3px 이내의 '깨끗한 변' 은 평면 출처에서 제외(3)한다. R=8 이므로 4~8px 뒤의 진짜 변이 쓰인다.
+    // 무딜어진 꼭짓점 주변의 법선은 이등분선 쪽으로 기울어 마이터를 뭉툭하게 만든다 → 평면 출처에서 제외(3)
+    // 동시에 '이 경계 픽셀에서 DIL 안에 있는 꼭짓점' 을 기록해 두면 띠 픽셀은 조회 한 번으로 끝난다.
+    std::vector<int> cornerOf(N, -1);
+    std::vector<int> cornerPix;
     {
-        const int DIL = 3;
         std::vector<unsigned char> f2 = flag;
-        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-            if (flag[(size_t)y * w + x] != 1) continue;
-            bool adjacent = false;
-            for (int dy = -DIL; dy <= DIL && !adjacent; dy++) {
+        for (size_t e = 0; e < edgePix.size(); e++) {
+            const int i = edgePix[e];
+            const int x = i % w, y = i / w;
+            int found = -1;
+            for (int dy = -DIL; dy <= DIL && found < 0; dy++) {
                 const int yy = y + dy; if (yy < 0 || yy >= h) continue;
                 for (int dx = -DIL; dx <= DIL; dx++) {
                     const int xx = x + dx; if (xx < 0 || xx >= w) continue;
-                    if (flag[(size_t)yy * w + xx] == 2) { adjacent = true; break; }
+                    if (flag[(size_t)yy * w + xx] == 2) { found = yy * w + xx; break; }
                 }
             }
-            if (adjacent) f2[(size_t)y * w + x] = 3;
+            if (found >= 0) {
+                cornerOf[i] = found;
+                if (flag[i] == 1) f2[i] = 3;
+            }
         }
         flag.swap(f2);
+        for (size_t e = 0; e < edgePix.size(); e++) if (flag[edgePix[e]] == 2) cornerPix.push_back(edgePix[e]);
+    }
+    if (cornerPix.empty()) return;
+
+    // 꼭짓점마다 주변 '깨끗한 변' 평면을 한 번만 모아 법선이 같은 것끼리 합친다 (보통 2~4개)
+    // s(p) = n·p − c. 같은 변에서 나온 평면은 **평균**을 낸다 — 가장 바깥을 고르면 AA 잡음만큼
+    // 평면이 밀려 모서리가 1~2px 과하게 뻗는다.
+    struct Plane { float nx, ny, c; float sx, sy, sc; int n; };
+    std::vector<int> planeStart(cornerPix.size() + 1, 0);
+    std::vector<Plane> planes;
+    std::vector<float> apexX(cornerPix.size()), apexY(cornerPix.size());
+    std::unique_ptr<int[]> cornerIdxBuf(new int[N]);
+    int* cornerIdx = cornerIdxBuf.get();        // 꼭짓점 픽셀만 쓰고 그 자리만 읽는다
+    planes.reserve(cornerPix.size() * 4);
+    for (size_t ci = 0; ci < cornerPix.size(); ci++) {
+        const int cp = cornerPix[ci];
+        const int cx = cp % w, cy = cp / w;
+        cornerIdx[cp] = (int)ci;
+        apexX[ci] = (float)cx + nx[cp] * tt[cp];
+        apexY[ci] = (float)cy + ny[cp] * tt[cp];
+        planeStart[ci] = (int)planes.size();
+        for (int dy = -R; dy <= R; dy++) {
+            const int yy = cy + dy; if (yy < 0 || yy >= h) continue;
+            for (int dx = -R; dx <= R; dx++) {
+                const int xx = cx + dx; if (xx < 0 || xx >= w) continue;
+                const size_t j = (size_t)yy * w + xx;
+                if (flag[j] != 1) continue;
+                const float c = nx[j] * ((float)xx + nx[j] * tt[j]) + ny[j] * ((float)yy + ny[j] * tt[j]);
+                bool merged = false;
+                for (int q = planeStart[ci]; q < (int)planes.size(); q++) {
+                    if (planes[q].nx * nx[j] + planes[q].ny * ny[j] > 0.98f) {   // 같은 변
+                        planes[q].sx += nx[j]; planes[q].sy += ny[j]; planes[q].sc += c; planes[q].n++;
+                        merged = true; break;
+                    }
+                }
+                if (!merged && (int)planes.size() - planeStart[ci] < MAXPL)
+                    planes.push_back({ nx[j], ny[j], c, nx[j], ny[j], c, 1 });
+            }
+        }
+    }
+    planeStart[cornerPix.size()] = (int)planes.size();
+    for (size_t q = 0; q < planes.size(); q++) {            // 누적값 → 평균 평면
+        Plane& P = planes[q];
+        const float l = std::sqrt(P.sx * P.sx + P.sy * P.sy);
+        if (P.n > 0 && l > 1e-6f) { P.nx = P.sx / l; P.ny = P.sy / l; P.c = P.sc / P.n; }
     }
 
+    const auto _s1 = std::chrono::steady_clock::now();
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
         const size_t i = (size_t)y * w + x;
         const float r = dist[i];
         if (r < RMIN || r > maxReach) continue;
         const int s = site[i];
         if (s < 0 || (size_t)s >= N) continue;
-        const int qx = s % w, qy = s / w;
-        // 최근접점 주변에 꼭짓점이 있어야 손댄다 (직선·오목 구간은 그대로)
-        // 이진 마스크의 최근접 씨앗은 뜍한 끝에 있을 수 있다 → 근처의 꼭지점 픽셀을 찾아 그걸 중심으로 평면을 모은다
-        int cx = -1, cy = -1;
-        for (int dy = -3; dy <= 3 && cx < 0; dy++) for (int dx = -3; dx <= 3; dx++) {
-            const int yy = qy + dy, xx = qx + dx;
-            if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue;
-            if (flag[(size_t)yy * w + xx] == 2) { cx = xx; cy = yy; break; }
-        }
-        if (cx < 0) continue;
-        const int sx = cx, sy = cy;
-        // 주변 '깨끗한 변'들의 지지 평면 거리 중 최대 = 마이터 거리
+        const int cp = cornerOf[s];                 // 최근접 씨앗 근처의 꼭짓점 (없으면 직선 구간)
+        if (cp < 0) continue;
+        const int ci = cornerIdx[cp];
+        if (ci < 0) continue;
+        const int p0 = planeStart[ci], p1 = planeStart[ci + 1];
+        if (p1 <= p0) continue;
         float best = -1e30f, b1x = 0, b1y = 0;
-        for (int dy = -R; dy <= R; dy++) {
-            const int yy = sy + dy; if (yy < 0 || yy >= h) continue;
-            for (int dx = -R; dx <= R; dx++) {
-                const int xx = sx + dx; if (xx < 0 || xx >= w) continue;
-                const size_t j = (size_t)yy * w + xx;
-                if (flag[j] != 1) continue;
-                const float sb = nx[j] * (float)(x - xx) + ny[j] * (float)(y - yy) - tt[j];
-                if (sb > best) { best = sb; b1x = nx[j]; b1y = ny[j]; }
-            }
+        for (int q = p0; q < p1; q++) {
+            const float sb = planes[q].nx * (float)x + planes[q].ny * (float)y - planes[q].c;
+            if (sb > best) { best = sb; b1x = planes[q].nx; b1y = planes[q].ny; }
         }
-        if (best <= -1e29f) continue;
-        // 지지 평면 거리가 둘렉거리보다 크면 볼록한 꼭지점이 아니다(오목한 모서리·다른 부위가 섮임) → 그대로 둔다
+        // 지지 평면 거리가 둘레거리보다 크면 볼록한 꼭짓점이 아니다(오목한 모서리) → 그대로 둔다
         if (best > r + 0.5f) continue;
-        // 두 번째 변 = 첫 변과 20° 이상 벌어진 것 중 가장 큰 것
         float best2 = -1e30f, b2x = 0, b2y = 0;
-        for (int dy = -R; dy <= R; dy++) {
-            const int yy = sy + dy; if (yy < 0 || yy >= h) continue;
-            for (int dx = -R; dx <= R; dx++) {
-                const int xx = sx + dx; if (xx < 0 || xx >= w) continue;
-                const size_t j = (size_t)yy * w + xx;
-                if (flag[j] != 1) continue;
-                if (nx[j] * b1x + ny[j] * b1y > 0.94f) continue;
-                const float sb = nx[j] * (float)(x - xx) + ny[j] * (float)(y - yy) - tt[j];
-                if (sb > best2) { best2 = sb; b2x = nx[j]; b2y = ny[j]; }
-            }
+        for (int q = p0; q < p1; q++) {
+            if (planes[q].nx * b1x + planes[q].ny * b1y > 0.94f) continue;
+            const float sb = planes[q].nx * (float)x + planes[q].ny * (float)y - planes[q].c;
+            if (sb > best2) { best2 = sb; b2x = planes[q].nx; b2y = planes[q].ny; }
         }
         float dm = std::min(best, r);
         if (best2 > -1e29f) {
-            dm = std::min(std::max(best, best2), r);
             const float cosFull = std::min(1.f, std::max(-1.f, b1x * b2x + b1y * b2y));
             const float cpsi = std::sqrt(std::max(0.f, (1.f + cosFull) * 0.5f));     // cos(두 법선 사이 각 / 2)
             if (mode == BS_CORNER_BEVEL || cpsi < 1e-4f || 1.f / std::max(cpsi, 1e-4f) > limit) {
-                float bx = b1x + b2x, by = b1y + b2y;
-                const float bl = std::sqrt(bx * bx + by * by);
+                float bvx = b1x + b2x, bvy = b1y + b2y;
+                const float bl = std::sqrt(bvx * bvx + bvy * bvy);
                 if (bl > 1e-6f) {
-                    bx /= bl; by /= bl;
-                    const size_t qi = (size_t)sy * w + sx;
-                    const float apx = (float)sx + nx[qi] * tt[qi];
-                    const float apy = (float)sy + ny[qi] * tt[qi];
-                    const float db = (bx * ((float)x - apx) + by * ((float)y - apy)) / std::max(cpsi, 1e-4f);
+                    bvx /= bl; bvy /= bl;
+                    const float db = (bvx * ((float)x - apexX[ci]) + bvy * ((float)y - apexY[ci])) / std::max(cpsi, 1e-4f);
                     dm = std::max(dm, db);
                 }
             }
         }
         dist[i] = std::max(0.f, dm);
     }
+    LOGF("  Sharpen setup %.1f ms | scan %.1f ms | corners=%d planes=%d",
+         std::chrono::duration<double, std::milli>(_s1 - _s0).count(),
+         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _s1).count(),
+         (int)cornerPix.size(), (int)planes.size());
 }
 
 // ── 값 노이즈 (fBm) — 가장자리 거칠게 ──
@@ -470,10 +536,17 @@ struct StrokeCtx {
 template <typename P>
 static void BuildSDF(StrokeCtx& c)
 {
-    const int pad = c.d->margin + 1;
-    c.gx0 = c.out_rect.left - pad; c.gy0 = c.out_rect.top - pad;
-    c.gw = (c.out_rect.right - c.out_rect.left) + pad * 2;
-    c.gh = (c.out_rect.bottom - c.out_rect.top) + pad * 2;
+    // 격자 = 출력 영역 ∪ 입력 영역 + 2px.
+    //  씨앗(전경 픽셀)은 전부 입력 영역 안에 있고 그 밖은 어차피 투명이므로, 예전처럼 출력 영역을
+    //  여백(margin)만큼 사방으로 넓힐 필요가 없다. 마이터는 여백이 Limit 배라 격자가 2.5배까지 커졌다.
+    const int pad = 2;
+    const int ux0 = std::min((int)c.out_rect.left, (int)c.d->in_rect.left);
+    const int uy0 = std::min((int)c.out_rect.top, (int)c.d->in_rect.top);
+    const int ux1 = std::max((int)c.out_rect.right, (int)c.d->in_rect.right);
+    const int uy1 = std::max((int)c.out_rect.bottom, (int)c.d->in_rect.bottom);
+    c.gx0 = ux0 - pad; c.gy0 = uy0 - pad;
+    c.gw = (ux1 - ux0) + pad * 2;
+    c.gh = (uy1 - uy0) + pad * 2;
     const int w = c.gw, h = c.gh;
     const float INF = 1e20f;
     std::vector<float> inside((size_t)w * h), outside((size_t)w * h);
@@ -492,21 +565,50 @@ static void BuildSDF(StrokeCtx& c)
             outside[(size_t)y * w + x] = fg ? 0.f : INF;   // 씨앗 = 전경 → 배경 픽셀의 "안까지 거리"
         }
     }
+    const auto _t0 = std::chrono::steady_clock::now();
+    // 획이 닿지 않는 쪽 거리장은 EDT 자체를 생략한다. 경계 픽셀(알파 커버리지로 보정되는 1px)만
+    // 거리 1 로 표시해 두면 아래 합성 규칙이 그대로 동작하고, 나머지는 ‘아주 멀’ 으로 두면 된다.
+    const bool needIn = (c.d->bandLo < -1.0), needOut = (c.d->bandHi > 1.0);
+    const float VERY_FAR = 1e6f;   // FAR / near 는 windows.h 매크로라 쓸 수 없다
+    if (!needIn || !needOut) {
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            const size_t i = (size_t)y * w + x;
+            const bool fg = c.alpha[i] >= 0.5f;
+            bool edge = false;
+            if (x > 0 && (c.alpha[i - 1] >= 0.5f) != fg) edge = true;
+            else if (x < w - 1 && (c.alpha[i + 1] >= 0.5f) != fg) edge = true;
+            else if (y > 0 && (c.alpha[i - w] >= 0.5f) != fg) edge = true;
+            else if (y < h - 1 && (c.alpha[i + w] >= 0.5f) != fg) edge = true;
+            if (!needIn)  inside[i]  = fg ? (edge ? 1.f : VERY_FAR) : 0.f;
+            if (!needOut) outside[i] = fg ? 0.f : (edge ? 1.f : VERY_FAR);
+        }
+    }
     if (c.d->corner == BS_CORNER_ROUND) {
-        edt2d(inside, w, h); edt2d(outside, w, h);
-        for (size_t i = 0; i < (size_t)w * h; i++) { inside[i] = std::sqrt(inside[i]); outside[i] = std::sqrt(outside[i]); }
+        if (needIn)  { edt2d(inside, w, h);  for (size_t i = 0; i < (size_t)w * h; i++) inside[i]  = std::sqrt(inside[i]); }
+        if (needOut) { edt2d(outside, w, h); for (size_t i = 0; i < (size_t)w * h; i++) outside[i] = std::sqrt(outside[i]); }
     } else {
         // 모서리를 각지게: 최근접 씨앗을 함께 구한 뒤 알파 기울기로 복원한 변의 법선으로 Miter/Bevel 거리를 다시 쓴다
-        const float reach = (float)(c.d->margin + 2);
+        //  · 획이 닿지 않는 쪽 거리장은 아예 건드리지 않는다 (Outside 면 안쪽, Inside 면 바깥쪽)
+        //  · 법선·꼭짓점 계산 범위는 레이어 내용 상자로 제한 (격자는 여백 때문에 그보다 훨씬 넓다)
         const float lim = (float)c.d->miterLimit;
+        const int cbx0 = c.d->in_rect.left - c.gx0, cby0 = c.d->in_rect.top - c.gy0;
+        const int cbx1 = c.d->in_rect.right - c.gx0, cby1 = c.d->in_rect.bottom - c.gy0;
         std::vector<int> site;
-        edt2d(inside, w, h, &site);
-        for (size_t i = 0; i < (size_t)w * h; i++) inside[i] = std::sqrt(inside[i]);
-        SharpenCorners(inside, site, c.alpha, w, h, c.d->corner, lim, reach, -1.f);
-        edt2d(outside, w, h, &site);
-        for (size_t i = 0; i < (size_t)w * h; i++) outside[i] = std::sqrt(outside[i]);
-        SharpenCorners(outside, site, c.alpha, w, h, c.d->corner, lim, reach, 1.f);
+        if (needIn) {
+            edt2d(inside, w, h, &site);
+            for (size_t i = 0; i < (size_t)w * h; i++) inside[i] = std::sqrt(inside[i]);
+            SharpenCorners(inside, site, c.alpha, w, h, c.d->corner, lim,
+                           (float)((-c.d->bandLo + 2.0) * lim + 2.0), -1.f, cbx0, cby0, cbx1, cby1);
+        }
+        if (needOut) {
+            edt2d(outside, w, h, &site);
+            for (size_t i = 0; i < (size_t)w * h; i++) outside[i] = std::sqrt(outside[i]);
+            SharpenCorners(outside, site, c.alpha, w, h, c.d->corner, lim,
+                           (float)((c.d->bandHi + 2.0) * lim + 2.0), 1.f, cbx0, cby0, cbx1, cby1);
+        }
     }
+    LOGF("BuildSDF %dx%d corner=%ld : %.1f ms", w, h, (long)c.d->corner,
+         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _t0).count());
     c.sdf.resize((size_t)w * h);
     for (size_t i = 0; i < (size_t)w * h; i++) {
         float a = c.alpha[i];

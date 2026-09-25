@@ -38,7 +38,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)src;$(AE_SDK_DIR)\Headers;$(AE_SDK_DIR)\Headers\SP;$(AE_SDK_DIR)\Headers\Win;$(AE_SDK_DIR)\Resources;$(AE_SDK_DIR)\Util;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;NOMINMAX;$(BANG_FX_DEFINES);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>

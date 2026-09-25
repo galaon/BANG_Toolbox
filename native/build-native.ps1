@@ -5,7 +5,7 @@
 .EXAMPLE   powershell -ExecutionPolicy Bypass -File native\build-native.ps1 -Install
 #>
 [CmdletBinding()]
-param([ValidateSet('Release','Debug')][string]$Configuration = 'Release', [switch]$Install)
+param([ValidateSet('Release','Debug')][string]$Configuration = 'Release', [switch]$Install, [string]$Defines = '')
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $vc = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
@@ -14,7 +14,7 @@ $env:CL = '/utf-8'   # SDK headers contain non-CP949 chars (warning C4819)
 $projects = Get-ChildItem (Join-Path $here 'BANG_FX') -Filter '*.vcxproj'
 foreach ($p in $projects) {
   Write-Host "== $($p.Name) [$Configuration]" -ForegroundColor Cyan
-  cmd /c "`"$vc`" >nul && msbuild `"$($p.FullName)`" /p:Configuration=$Configuration /p:Platform=x64 /m /v:m /nologo"
+  cmd /c "`"$vc`" >nul && msbuild `"$($p.FullName)`" /p:Configuration=$Configuration /p:Platform=x64 /p:BANG_FX_DEFINES=$Defines /m /v:m /nologo"
   if ($LASTEXITCODE -ne 0) { throw "build failed: $($p.Name)" }
 }
 $out = Join-Path $here "out\$Configuration"

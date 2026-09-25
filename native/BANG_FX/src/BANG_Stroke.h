@@ -77,6 +77,7 @@ struct BS_PreRenderData {
     A_long    position, corner, fill, gradType, blend, body, order;
     PF_FpLong width, offset, softness, opacity, gradAngle, gradScale, bodyOpacity;
     PF_FpLong miterLimit, gradOpA, gradOpB;
+    PF_FpLong bandLo, bandHi;   // 획이 닿는 거리 범위(부호 있는 거리) — 모서리 보정 범위 제한용
     bool      gradRev, front;
     PF_Pixel  colorA, colorB;
     PF_FpLong noiseAmount, noiseScale, noiseEvo;
