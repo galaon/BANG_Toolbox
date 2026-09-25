@@ -3,6 +3,18 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.3.9] — 2026-09-25
+
+### Added (BANG Stroke v1.4)
+- **모서리 모양 `Corner`** — `Round`(기본, 지금까지와 동일) / **`Miter`**(볼록 꼭지점을 각지게 뀌족하게) / **`Bevel`**(꼭지점을 짧게 잘라냄). `Miter Limit`(1~10, 기본 4)을 넘어설 날카로운 각은 자동으로 Bevel 로 대체됩니다.
+  - 안티에일리어싱된 알파의 기울기로 인접한 두 변의 법선을 복원해 계산합니다 — 도형을 회전시켜도 모서리 각도가 동일하게 나오고, 직선 구간의 획 두께는 그대로 유지됩니다(기울어진 변이 두꺼지지 않고, 오목한 모서리도 깎이지 않음).
+  - 실측(200px 사각형 · 획 20px): 회전 0°/10°/22.5°/45° 에서 마이터 꼭지점이 28.75 / 28.50 / 29.00 / 29.00 px — 이론값 28.28 px 대비 모두 ±0.7px 이내.
+- **그라데이션 불투명도** — `Gradient` 그룹에 `Opacity A` / `Opacity B`. 색과 또같이 불투명도도 보간되어 획이 서서히 사라지게 만들 수 있습니다(예: Across Stroke + Opacity B 0 → 바깥으로 페이드).
+
+### Changed
+- 파라미터가 추가되어 v1.3 으로 만든 `BANG Stroke` 인스턴스는 **다시 적용**해야 합니다.
+- `Miter` 사용 시 출력 버퍼 여백을 `Miter Limit` 배만큼 더 확보합니다(뀌족한 모서리가 잘리지 않도록).
+
 ## [1.3.8] — 2026-09-25
 
 ### Changed (BANG Stroke v1.3 — 구조 변경)

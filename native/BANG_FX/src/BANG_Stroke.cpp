@@ -1,6 +1,8 @@
 // BANG_Stroke.cpp — BANG Stroke
 //  알파 경계까지의 부호 있는 거리(Euclidean Distance Transform)를 한 번 계산하고,
-//  |d - 중심| < 두께/2 인 픽셀에 획 색을 칠한다. 모서리는 자연스럽게 둥글고, 계산량은 이미지 크기에 비례.
+//  |d - 중심| < 두께/2 인 픽셀에 획 색을 칠한다. 계산량은 이미지 크기에 비례.
+//  · 모서리: Round(거리장 그대로) / Miter / Bevel — 최근접 씨앗을 공유하는 픽셀들의 방향 팬에서
+//    인접 두 변의 법선을 복원해 거리를 다시 쓴다 (SharpenCorners)
 //  · 획 하나 = 이펙트 하나. 여러 겹은 **이 이펙트를 여러 번 적용**하면 된다 —
 //    두 번째 인스턴스는 첫 획이 포함된 알파를 입력으로 받으므로 그 바깥 윤곽을 따라 그려진다.
 //  · 색: 단색 또는 그라데이션(Across Stroke / Linear 각도 / Radial 내용 중심) · 블렌드(Normal/Multiply/Screen/Add)
@@ -64,6 +66,9 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Position", 3, BS_POS_OUTSIDE, "Outside|Center|Inside", BS_POSITION);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POPUP("Corner", 3, BS_CORNER_ROUND, "Round|Miter|Bevel", BS_CORNER);
+    FSLIDER("Miter Limit", 1, 10, 1, 10, 4, PF_Precision_TENTHS, 0, BS_MITER_LIMIT);
     FSLIDER("Width (px)", 0, 1000, 0, 60, 6, PF_Precision_TENTHS, 0, BS_WIDTH);
     FSLIDER("Offset (px)", -500, 500, -20, 20, 0, PF_Precision_TENTHS, 0, BS_OFFSET);
     FSLIDER("Softness (px)", 0, 200, 0, 20, 0, PF_Precision_TENTHS, 0, BS_SOFTNESS);
@@ -83,6 +88,8 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
     PF_ADD_ANGLE("Gradient Angle", 0, BS_GRAD_ANGLE);
     FSLIDER("Gradient Scale (px)", 1, 10000, 1, 1000, 200, PF_Precision_TENTHS, 0, BS_GRAD_SCALE);
+    FSLIDER("Opacity A", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BS_GRAD_OP_A);
+    FSLIDER("Opacity B", 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BS_GRAD_OP_B);
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOXX("Reverse", FALSE, 0, BS_GRAD_REV);
     TOPIC_END(BS_G_GRAD_END);
@@ -134,6 +141,8 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
 
     #define CHK(idx) AEFX_CLR_STRUCT(pd); ERR(PF_CHECKOUT_PARAM(in_data, idx, in_data->current_time, in_data->time_step, in_data->time_scale, &pd));
     CHK(BS_POSITION);      d->position    = pd.u.pd.value;
+    CHK(BS_CORNER);        d->corner      = pd.u.pd.value;
+    CHK(BS_MITER_LIMIT);   d->miterLimit  = std::max(1.0, pd.u.fs_d.value);
     CHK(BS_WIDTH);         d->width       = pd.u.fs_d.value * ds;
     CHK(BS_OFFSET);        d->offset      = pd.u.fs_d.value * ds;
     CHK(BS_SOFTNESS);      d->softness    = pd.u.fs_d.value * ds;
@@ -145,6 +154,8 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     CHK(BS_GRAD_TYPE);     d->gradType    = pd.u.pd.value;
     CHK(BS_GRAD_ANGLE);    d->gradAngle   = FIX_2_FLOAT(pd.u.ad.value);
     CHK(BS_GRAD_SCALE);    d->gradScale   = pd.u.fs_d.value * ds;
+    CHK(BS_GRAD_OP_A);     d->gradOpA     = pd.u.fs_d.value / 100.0;
+    CHK(BS_GRAD_OP_B);     d->gradOpB     = pd.u.fs_d.value / 100.0;
     CHK(BS_GRAD_REV);      d->gradRev     = pd.u.bd.value != 0;
     CHK(BS_N_AMOUNT);      d->noiseAmount = pd.u.fs_d.value * ds;
     CHK(BS_N_SCALE);       d->noiseScale  = std::max(1.0, pd.u.fs_d.value * ds);
@@ -162,6 +173,8 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
 
     // 바깥으로 뻗는 최대 거리 = 오프셋 + 두께(위치에 따라) + 부드러움 + 노이즈 + 여유
     PF_FpLong reach = std::max(0.0, d->offset) + d->softness + ((d->position == BS_POS_INSIDE) ? 0.0 : d->width);
+    // 마이터는 모서리가 한계 배까지 뻗는다 — 다만 두꺼운 획에서 격자가 폭발하지 않게 +1000px 로 상한
+    if (d->corner == BS_CORNER_MITER) reach = std::min(reach * d->miterLimit, reach + 1000.0);
     d->margin = (A_long)std::ceil(reach + d->noiseAmount + 2.0);
     LOGF("PreRender pos=%ld width=%.1f offset=%.1f soft=%.1f noise=%.1f margin=%ld", d->position, d->width, d->offset, d->softness, d->noiseAmount, d->margin);
 
@@ -199,7 +212,8 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
 }
 
 // ── 거리 변환 (Felzenszwalb & Huttenlocher, 1D 제곱거리 두 번) ──
-static void edt1d(const float* f, float* dOut, int n, std::vector<int>& v, std::vector<float>& z)
+//  argOut 이 널이 아니면 각 위치의 최소값을 만든 씨앗 인덱스도 돌려준다 (모서리 처리용)
+static void edt1d(const float* f, float* dOut, int* argOut, int n, std::vector<int>& v, std::vector<float>& z)
 {
     const float INF = 1e20f;
     v.resize(n); z.resize(n + 1);
@@ -219,22 +233,190 @@ static void edt1d(const float* f, float* dOut, int n, std::vector<int>& v, std::
         while (z[k + 1] < q) k++;
         int vk = v[k];
         dOut[q] = (q - vk) * (float)(q - vk) + f[vk];
+        if (argOut) argOut[q] = vk;
     }
 }
 
 // grid: 0 = 씨앗(거리 0), INF = 나머지. 결과: 씨앗까지의 제곱 거리
-static void edt2d(std::vector<float>& g, int w, int h)
+//  site 가 널이 아니면 각 픽셀의 최근접 씨앗 픽셀 인덱스(y*w+x)도 채운다
+static void edt2d(std::vector<float>& g, int w, int h, std::vector<int>* site = nullptr)
 {
     std::vector<float> col(std::max(w, h)), out(std::max(w, h));
     std::vector<int> v; std::vector<float> z;
+    std::vector<int> arg, colArg;
+    if (site) { arg.resize(std::max(w, h)); colArg.resize((size_t)w * h); site->resize((size_t)w * h); }
     for (int x = 0; x < w; x++) {
-        for (int y = 0; y < h; y++) col[y] = g[y * w + x];
-        edt1d(col.data(), out.data(), h, v, z);
-        for (int y = 0; y < h; y++) g[y * w + x] = out[y];
+        for (int y = 0; y < h; y++) col[y] = g[(size_t)y * w + x];
+        edt1d(col.data(), out.data(), site ? arg.data() : nullptr, h, v, z);
+        for (int y = 0; y < h; y++) {
+            g[(size_t)y * w + x] = out[y];
+            if (site) colArg[(size_t)y * w + x] = arg[y];     // 이 열에서 가장 가까운 씨앗의 행
+        }
     }
     for (int y = 0; y < h; y++) {
-        edt1d(&g[y * w], out.data(), w, v, z);
-        memcpy(&g[y * w], out.data(), w * sizeof(float));
+        edt1d(&g[(size_t)y * w], out.data(), site ? arg.data() : nullptr, w, v, z);
+        if (site) {
+            for (int x = 0; x < w; x++) {
+                int ax = arg[x];                              // 이 행에서 고른 열
+                (*site)[(size_t)y * w + x] = colArg[(size_t)y * w + ax] * w + ax;
+            }
+        }
+        memcpy(&g[(size_t)y * w], out.data(), (size_t)w * sizeof(float));
+    }
+}
+
+// ── 모서리 각지게 (Miter / Bevel) ────────────────────────────
+//  이진 마스크의 계단 때문에 "최근접 씨앗의 부채꼴"만으로는 회전한 도형의 꼭짓점 각도를 못 맞춘다
+//  (0°/45° 는 맞고 10°/22.5° 는 과하거나 모자람). 그래서 **안티에일리어싱된 알파의 기울기**로
+//  경계 픽셀마다 바깥 법선 n 과 0.5 등고선까지의 거리 t 를 구한다 — 회전에 무관하게 정확하다.
+//    · corner 픽셀 = 주변 법선이 크게 벌어지는 곳(볼록 꼭짓점). 최근접 씨앗이 corner 일 때만 손댄다
+//      → 직선 구간(두께 유지)과 오목한 모서리(원래 각짐)는 건드리지 않는다.
+//    · Miter: d = max over 주변 '깨끗한' 변 b 의 지지 평면 거리 (둥근 거리보다 작아 모서리가 뻗는다)
+//    · Bevel: 양 끝 법선 n1, n2 의 이등분 평면을 더해 꼭짓점을 잘라낸다. Miter Limit 초과 시에도 동일.
+//  dist 는 실제 거리(in-place), maxReach 밖은 손대지 않는다. sgn = +1 바깥 거리장 / −1 안쪽 거리장.
+static void SharpenCorners(std::vector<float>& dist, const std::vector<int>& site, const std::vector<float>& alpha,
+                           int w, int h, A_long mode, float limit, float maxReach, float sgn)
+{
+    const size_t N = (size_t)w * h;
+    if (site.size() != N || alpha.size() != N) return;
+    const float RMIN = 1.2f;
+    const float MAG_MIN = 0.12f;        // 이보다 완만하면 법선을 믿을 수 없다
+    const float T_MAX = 1.5f;           // 0.5 등고선이 1.5px 넘게 떨어져 있으면 경계 픽셀이 아니다
+    const float CORNER_COS = 0.87f;     // 주변 법선이 30° 넘게 벌어지면 꼭짓점
+    const int   R = 8;                  // 지지 평면을 모을 반경 (꼭짓점 주변 2~3px 는 corner 로 제외되므로 넓게)
+    const int   CR = 2;                 // 꼭짓점 판정 반경
+
+    // 1픽셀 차분은 거의 수평/수직인 변에서 법선을 축에 딱 붙게 양자화한다(10° 기울기가 0° 로 보임)
+    // → [1 4 6 4 1]/16 로 한 번 부드럽게 만든 알파에서 기울기를 잰다. 회전각과 무관하게 정확해진다.
+    std::vector<float> sm((size_t)w * h, 0.f), tmp((size_t)w * h, 0.f);
+    {
+        const float k[5] = { 1.f / 16, 4.f / 16, 6.f / 16, 4.f / 16, 1.f / 16 };
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            float a = 0;
+            for (int i = 0; i < 5; i++) { int xx = std::min(w - 1, std::max(0, x - 2 + i)); a += k[i] * alpha[(size_t)y * w + xx]; }
+            tmp[(size_t)y * w + x] = a;
+        }
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            float a = 0;
+            for (int i = 0; i < 5; i++) { int yy = std::min(h - 1, std::max(0, y - 2 + i)); a += k[i] * tmp[(size_t)yy * w + x]; }
+            sm[(size_t)y * w + x] = a;
+        }
+    }
+
+    std::vector<float> nx(N, 0.f), ny(N, 0.f), tt(N, 0.f);
+    std::vector<unsigned char> flag(N, 0);      // 0 없음 · 1 깨끗한 변 · 2 꼭짓점
+    for (int y = 1; y < h - 1; y++) for (int x = 1; x < w - 1; x++) {
+        const size_t i = (size_t)y * w + x;
+        const float gx = (sm[i + 1] - sm[i - 1]) * 0.5f;
+        const float gy = (sm[i + w] - sm[i - w]) * 0.5f;
+        const float mag = std::sqrt(gx * gx + gy * gy);
+        if (mag < MAG_MIN) continue;
+        const float t = sgn * (sm[i] - 0.5f) / mag;             // 픽셀 중심 → 0.5 등고선 (법선 방향 부호 거리)
+        if (t > T_MAX || t < -T_MAX) continue;
+        nx[i] = -sgn * gx / mag; ny[i] = -sgn * gy / mag;       // 바깥(= 알파가 줄어드는) 방향
+        tt[i] = t;
+        flag[i] = 1;
+    }
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+        const size_t i = (size_t)y * w + x;
+        if (!flag[i]) continue;
+        float worst = 1.f;
+        for (int dy = -CR; dy <= CR; dy++) {
+            const int yy = y + dy; if (yy < 0 || yy >= h) continue;
+            for (int dx = -CR; dx <= CR; dx++) {
+                const int xx = x + dx; if (xx < 0 || xx >= w) continue;
+                const size_t j = (size_t)yy * w + xx;
+                if (flag[j] != 1) continue;
+                const float c = nx[i] * nx[j] + ny[i] * ny[j];
+                if (c < worst) worst = c;
+            }
+        }
+        if (worst < CORNER_COS) flag[i] = 2;
+    }
+    // 무딜어진 꼭지점 주변의 법선은 이등분선 쪽으로 기울어져 있어 지지 평면으로 쓰면 마이터가 뭐뜿해진다
+    // → 꼭지점에서 3px 이내의 '깨끗한 변' 은 평면 출처에서 제외(3)한다. R=8 이므로 4~8px 뒤의 진짜 변이 쓰인다.
+    {
+        const int DIL = 3;
+        std::vector<unsigned char> f2 = flag;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            if (flag[(size_t)y * w + x] != 1) continue;
+            bool adjacent = false;
+            for (int dy = -DIL; dy <= DIL && !adjacent; dy++) {
+                const int yy = y + dy; if (yy < 0 || yy >= h) continue;
+                for (int dx = -DIL; dx <= DIL; dx++) {
+                    const int xx = x + dx; if (xx < 0 || xx >= w) continue;
+                    if (flag[(size_t)yy * w + xx] == 2) { adjacent = true; break; }
+                }
+            }
+            if (adjacent) f2[(size_t)y * w + x] = 3;
+        }
+        flag.swap(f2);
+    }
+
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+        const size_t i = (size_t)y * w + x;
+        const float r = dist[i];
+        if (r < RMIN || r > maxReach) continue;
+        const int s = site[i];
+        if (s < 0 || (size_t)s >= N) continue;
+        const int qx = s % w, qy = s / w;
+        // 최근접점 주변에 꼭짓점이 있어야 손댄다 (직선·오목 구간은 그대로)
+        // 이진 마스크의 최근접 씨앗은 뜍한 끝에 있을 수 있다 → 근처의 꼭지점 픽셀을 찾아 그걸 중심으로 평면을 모은다
+        int cx = -1, cy = -1;
+        for (int dy = -3; dy <= 3 && cx < 0; dy++) for (int dx = -3; dx <= 3; dx++) {
+            const int yy = qy + dy, xx = qx + dx;
+            if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue;
+            if (flag[(size_t)yy * w + xx] == 2) { cx = xx; cy = yy; break; }
+        }
+        if (cx < 0) continue;
+        const int sx = cx, sy = cy;
+        // 주변 '깨끗한 변'들의 지지 평면 거리 중 최대 = 마이터 거리
+        float best = -1e30f, b1x = 0, b1y = 0;
+        for (int dy = -R; dy <= R; dy++) {
+            const int yy = sy + dy; if (yy < 0 || yy >= h) continue;
+            for (int dx = -R; dx <= R; dx++) {
+                const int xx = sx + dx; if (xx < 0 || xx >= w) continue;
+                const size_t j = (size_t)yy * w + xx;
+                if (flag[j] != 1) continue;
+                const float sb = nx[j] * (float)(x - xx) + ny[j] * (float)(y - yy) - tt[j];
+                if (sb > best) { best = sb; b1x = nx[j]; b1y = ny[j]; }
+            }
+        }
+        if (best <= -1e29f) continue;
+        // 지지 평면 거리가 둘렉거리보다 크면 볼록한 꼭지점이 아니다(오목한 모서리·다른 부위가 섮임) → 그대로 둔다
+        if (best > r + 0.5f) continue;
+        // 두 번째 변 = 첫 변과 20° 이상 벌어진 것 중 가장 큰 것
+        float best2 = -1e30f, b2x = 0, b2y = 0;
+        for (int dy = -R; dy <= R; dy++) {
+            const int yy = sy + dy; if (yy < 0 || yy >= h) continue;
+            for (int dx = -R; dx <= R; dx++) {
+                const int xx = sx + dx; if (xx < 0 || xx >= w) continue;
+                const size_t j = (size_t)yy * w + xx;
+                if (flag[j] != 1) continue;
+                if (nx[j] * b1x + ny[j] * b1y > 0.94f) continue;
+                const float sb = nx[j] * (float)(x - xx) + ny[j] * (float)(y - yy) - tt[j];
+                if (sb > best2) { best2 = sb; b2x = nx[j]; b2y = ny[j]; }
+            }
+        }
+        float dm = std::min(best, r);
+        if (best2 > -1e29f) {
+            dm = std::min(std::max(best, best2), r);
+            const float cosFull = std::min(1.f, std::max(-1.f, b1x * b2x + b1y * b2y));
+            const float cpsi = std::sqrt(std::max(0.f, (1.f + cosFull) * 0.5f));     // cos(두 법선 사이 각 / 2)
+            if (mode == BS_CORNER_BEVEL || cpsi < 1e-4f || 1.f / std::max(cpsi, 1e-4f) > limit) {
+                float bx = b1x + b2x, by = b1y + b2y;
+                const float bl = std::sqrt(bx * bx + by * by);
+                if (bl > 1e-6f) {
+                    bx /= bl; by /= bl;
+                    const size_t qi = (size_t)sy * w + sx;
+                    const float apx = (float)sx + nx[qi] * tt[qi];
+                    const float apy = (float)sy + ny[qi] * tt[qi];
+                    const float db = (bx * ((float)x - apx) + by * ((float)y - apy)) / std::max(cpsi, 1e-4f);
+                    dm = std::max(dm, db);
+                }
+            }
+        }
+        dist[i] = std::max(0.f, dm);
     }
 }
 
@@ -310,11 +492,25 @@ static void BuildSDF(StrokeCtx& c)
             outside[(size_t)y * w + x] = fg ? 0.f : INF;   // 씨앗 = 전경 → 배경 픽셀의 "안까지 거리"
         }
     }
-    edt2d(inside, w, h); edt2d(outside, w, h);
+    if (c.d->corner == BS_CORNER_ROUND) {
+        edt2d(inside, w, h); edt2d(outside, w, h);
+        for (size_t i = 0; i < (size_t)w * h; i++) { inside[i] = std::sqrt(inside[i]); outside[i] = std::sqrt(outside[i]); }
+    } else {
+        // 모서리를 각지게: 최근접 씨앗을 함께 구한 뒤 알파 기울기로 복원한 변의 법선으로 Miter/Bevel 거리를 다시 쓴다
+        const float reach = (float)(c.d->margin + 2);
+        const float lim = (float)c.d->miterLimit;
+        std::vector<int> site;
+        edt2d(inside, w, h, &site);
+        for (size_t i = 0; i < (size_t)w * h; i++) inside[i] = std::sqrt(inside[i]);
+        SharpenCorners(inside, site, c.alpha, w, h, c.d->corner, lim, reach, -1.f);
+        edt2d(outside, w, h, &site);
+        for (size_t i = 0; i < (size_t)w * h; i++) outside[i] = std::sqrt(outside[i]);
+        SharpenCorners(outside, site, c.alpha, w, h, c.d->corner, lim, reach, 1.f);
+    }
     c.sdf.resize((size_t)w * h);
     for (size_t i = 0; i < (size_t)w * h; i++) {
         float a = c.alpha[i];
-        float dIn = std::sqrt(inside[i]), dOut = std::sqrt(outside[i]);
+        float dIn = inside[i], dOut = outside[i];
         // 전경 픽셀은 배경까지 거리(dIn), 배경 픽셀은 전경까지 거리(dOut)만 유효 (자기 자신은 항상 씨앗이라 0)
         bool fg = (a >= 0.5f);
         float d = fg ? -(dIn - 0.5f) : (dOut - 0.5f);
@@ -356,6 +552,7 @@ static PF_Err RenderStroke(StrokeCtx& c)
     const float br = Chan<PF_Pixel>::get(d->colorB.red), bg = Chan<PF_Pixel>::get(d->colorB.green), bb = Chan<PF_Pixel>::get(d->colorB.blue);
     const float gang = (float)(d->gradAngle * 3.14159265358979 / 180.0);
     const float gcos = std::cos(gang), gsin = std::sin(gang), gscale = (float)std::max(1.0, d->gradScale);
+    const float gopA = (float)d->gradOpA, gopB = (float)d->gradOpB;
     const float ccx = (float)(d->in_rect.left + d->in_rect.right) * 0.5f;    // 내용 중심 (그라데이션 기준)
     const float ccy = (float)(d->in_rect.top + d->in_rect.bottom) * 0.5f;
     const bool hideBody = (d->body == BS_BODY_HIDE);
@@ -398,6 +595,7 @@ static PF_Err RenderStroke(StrokeCtx& c)
                 u = std::min(std::max(u, 0.f), 1.f);
                 if (d->gradRev) u = 1.f - u;
                 sr = ar + (br - ar) * u; sg = ag + (bg - ag) * u; sb = ab + (bb - ab) * u;
+                sa *= gopA + (gopB - gopA) * u;                                  // 그라데이션 불투명도
             }
 
             // premultiplied 누적: (뒤) 획 → 본체 → (앞) 획

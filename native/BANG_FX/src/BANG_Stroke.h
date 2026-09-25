@@ -15,7 +15,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_STROKE_MAJOR   1
-#define BANG_STROKE_MINOR   3
+#define BANG_STROKE_MINOR   4
 #define BANG_STROKE_BUG     0
 #define BANG_STROKE_STAGE   PF_Stage_DEVELOP
 #define BANG_STROKE_BUILD   1
@@ -24,6 +24,8 @@
 enum {
     BS_INPUT = 0,
     BS_POSITION,        // Position: Outside | Center | Inside
+    BS_CORNER,          // Corner: Round | Miter | Bevel
+    BS_MITER_LIMIT,     // Miter Limit (Miter 일 때 뾰족함 한계, 넘으면 Bevel)
     BS_WIDTH,           // Width (px)
     BS_OFFSET,          // Offset (px) — 가장자리에서 띄우기
     BS_SOFTNESS,        // Softness (px)
@@ -37,6 +39,8 @@ enum {
     BS_GRAD_TYPE,       //   Type: Across Stroke | Linear | Radial
     BS_GRAD_ANGLE,      //   Angle (Linear)
     BS_GRAD_SCALE,      //   Scale (px, Linear·Radial)
+    BS_GRAD_OP_A,       //   Opacity A (%) — 그라데이션 시작 쪽 불투명도
+    BS_GRAD_OP_B,       //   Opacity B (%) — 끝 쪽 불투명도
     BS_GRAD_REV,        //   Reverse
     BS_G_GRAD_END,
 
@@ -58,6 +62,7 @@ enum {
 };
 
 enum { BS_POS_OUTSIDE = 1, BS_POS_CENTER = 2, BS_POS_INSIDE = 3 };
+enum { BS_CORNER_ROUND = 1, BS_CORNER_MITER = 2, BS_CORNER_BEVEL = 3 };
 enum { BS_BODY_KEEP = 1, BS_BODY_HIDE = 2 };
 enum { BS_ORDER_BEHIND = 1, BS_ORDER_FRONT = 2 };
 enum { BS_FILL_SOLID = 1, BS_FILL_GRADIENT = 2 };
@@ -69,8 +74,9 @@ struct BS_PreRenderData {
     PF_LRect  in_rect;      // 체크아웃한 입력 영역 (레이어 좌표)
     PF_LRect  out_rect;     // result_rect (출력 world (0,0) 의 레이어 좌표)
     A_long    margin;       // 입력 요청 시 넓힌 여백
-    A_long    position, fill, gradType, blend, body, order;
+    A_long    position, corner, fill, gradType, blend, body, order;
     PF_FpLong width, offset, softness, opacity, gradAngle, gradScale, bodyOpacity;
+    PF_FpLong miterLimit, gradOpA, gradOpB;
     bool      gradRev, front;
     PF_Pixel  colorA, colorB;
     PF_FpLong noiseAmount, noiseScale, noiseEvo;

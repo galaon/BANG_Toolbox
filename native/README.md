@@ -34,10 +34,11 @@ native/
 
 ## 이펙트
 
-### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG · v1.3)
+### BANG Stroke (`Pseudo 아님 · matchName "BANG Stroke"`, 카테고리 BANG · v1.4)
 알파 경계의 부호 있는 거리(Felzenszwalb EDT, O(N))로 **획 하나**를 그린다.
 - **여러 겹 = 이펙트를 여러 번 적용**. 두 번째 인스턴스는 첫 획이 포함된 알파를 입력으로 받으므로 SDF 가 그 바깥 윤곽을 따라 다시 계산된다 — 별도 로직이 필요 없다. (v1.2 의 `Stroke 1/2/3` 그룹은 그룹을 회색처리하면 그 안 `Enable` 까지 비활성화돼 폐기.)
-- 파라미터(평평): `Position`(Outside/Center/Inside) · `Width (px)` · `Offset (px)` · `Softness (px)` · `Opacity` · `Blend`(Normal/Multiply/Screen/Add) · `Fill`(Solid/Gradient) · `Color` · 그룹 `Gradient`(`Color B` · `Gradient Type` Across Stroke/Linear/Radial · `Gradient Angle` · `Gradient Scale (px)` · `Reverse`).
+- 파라미터(평평): `Position`(Outside/Center/Inside) · `Corner`(Round/Miter/Bevel) · `Miter Limit` · `Width (px)` · `Offset (px)` · `Softness (px)` · `Opacity` · `Blend`(Normal/Multiply/Screen/Add) · `Fill`(Solid/Gradient) · `Color` · 그룹 `Gradient`(`Color B` · `Gradient Type` Across Stroke/Linear/Radial · `Gradient Angle` · `Gradient Scale (px)` · `Opacity A` · `Opacity B` · `Reverse`). 그라데이션 불투명도는 색과 같은 t 로 보간해 획 알파에 곱한다.
+- 모서리(`SharpenCorners`, Corner ≠ Round 일 때만 실행 — Round 는 추가 비용 0): 이진 마스크의 계단 때문에 "최근접 씨앗을 공유하는 부채꼴"으로는 회전한 도형의 꼭지점 각도를 맞출 수 없다(0°/45° 는 맞고 10°/22.5° 는 과하거나 모자람 — 실측함). 대신 **안티에일리어싱된 알파**를 `[1 4 6 4 1]/16` 로 한 번 고르게 만든 뒤 그 기울기로 경계 픽셀마다 바깥 법선 n 과 0.5 등고선까지의 거리 t 를 구한다(1픽셀 차분은 거의 수평/수직인 변에서 법선을 축에 양자화한다). `|∇a| < 0.12` 거나 `|t| > 1.5` 면 버린다 — 흐릿한 픽셀은 t 가 발산해 가짜 평면이 최댓값을 이긴다. 주변 법선이 30° 넘게 벌어지는 픽셀 = 꼭지점(flag 2), 그리고 꼭지점에서 3px 이내는 평면 출처에서 제외(흐려진 법선이 이등분선 쪽으로 기울어 마이터를 무딜게 만든다). 최근접 씨앗 근처에 꼭지점이 있는 픽셀만 손대고, 그 꼭지점 반경 8px 안의 ‘깨끗한 변’ 지지 평면 거리 중 **최댓값**이 곷 Miter 거리. 그 값이 둘렉거리보다 크면 볼록한 꼭지점이 아니므로(오목한 모서리) 그대로 둔다. Bevel 은 양 끝 법선의 이등분 평면을 더해 꼭지점을 잘라내며, Miter Limit 초과 시에도 같은 식을 쓴다. 직선 구간은 손대지 않으므로 기울어진 변의 획 두께가 변하지 않는다.
 - `Edge Noise`: `Amount (px)` · `Scale (px)` · `Detail`(fBm 옥타브) · `Evolution`(각도 → 노이즈 3번째 축, 60° = 한 칸) · `Seed`. 거리장에 더해 가장자리를 흔든다. 값 노이즈 fBm 은 ±1 을 못 채워 1.7배로 보정.
 - `Body`: `Body`(Keep/Hide) · `Body Opacity` · `Order`. 합성은 premultiplied 누적: behind 획 → 본체 → front 획(front 여부 = Order 가 In Front 이거나 Position ≠ Outside). 여기서 "본체" = 이 인스턴스의 입력이므로 아래쪽 획들까지 포함된다. 블렌드 모드는 그 시점의 누적 색을 base 로 쓴다.
 - SmartFX, 8/16/32bpc, 멀티프레임 렌더 OK. 출력 버퍼를 (오프셋+두께+부드러움+2) 만큼 확장(`PF_OutFlag_I_EXPAND_BUFFER`).
