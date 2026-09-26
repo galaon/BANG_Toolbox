@@ -63,13 +63,30 @@ document.querySelectorAll('.ap-btn').forEach(btn => {
 });
 
 // ── Color Picker ─────────────────────────────────────────────
+//
+//  자체 피커다. 예전에는 보이지 않는 Null + Color Control 이펙트를 만들고
+//  executeCommand(2240) 으로 AE 네이티브 다이얼로그를 띄워 색을 받아왔는데,
+//  그 방식은 컴프를 건드리고 undo 를 더럽히며 AE 가 떠 있어야만 동작했다. 이제는
+//    · 색 고르기 = 패널 안 HSV 사각형 + 색상/불투명도 슬라이더 + HEX/RGB/HSB/OKLCH 입력
+//    · 화면에서 집기 = bin/BANG_Picker.exe (확대 루페가 달린 전체화면 오버레이)
+//  두 가지로 나뉜다.
+//
+//  ⚠ CEP(Chromium 99)에서 화면 픽셀을 읽는 브라우저 경로는 전부 막혀 있다 — 실측:
+//     · window.EyeDropper 는 존재하지만 open() 이 2ms 만에 AbortError (CEF 가 오버레이를 못 띄움)
+//     · navigator.mediaDevices.getDisplayMedia 는 NotAllowedError: Permission denied
+//     그래서 화면 집기는 네이티브 도우미가 맡는다. 다시 조사하지 말 것.
 
 const CP_HISTORY_KEY = 'bang-toolbox-cp-history';
 const CP_HISTORY_MAX = 12;
+
+// 상태는 HSV + alpha 로 들고 있는다. hex 만 들고 있으면 채도 0(흰·검)에서 색상을 잃어버려
+// 색상 슬라이더가 제멋대로 튄다 — 피커에서 가장 흔한 버그다.
+let cpH = 123, cpS = 0.566, cpV = 0.686, cpA = 1;
 let cpCurrentHex = '#4CAF50';
+let cpModel = 'rgb';          // 숫자 세 칸이 무엇을 보여줄지 (rgb | hsb | oklch)
+let cpEditing = false;        // 입력 중에는 그 칸을 덮어쓰지 않는다
 
 // 리브랜딩: 구 키(aegreatagain-cp-history)에 저장된 히스토리를 신규 키로 1회 이관.
-// 기존 저장 색상 스와치를 잃지 않도록 보존한 뒤 구 키를 제거한다.
 (function cpMigrateLegacyHistory() {
   try {
     const LEGACY = 'aegreatagain-cp-history';
@@ -81,76 +98,203 @@ let cpCurrentHex = '#4CAF50';
   } catch (e) { /* localStorage 불가 환경 무시 */ }
 })();
 
-// ── 유틸리티 ─────────────────────────────────────────────────
+// ── 색 변환 ──────────────────────────────────────────────────
 
-// hex → {r, g, b}
+const cpClamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
 function cpHexToRgb(hex) {
   const h = hex.replace('#', '');
-  return {
-    r: parseInt(h.slice(0, 2), 16),
-    g: parseInt(h.slice(2, 4), 16),
-    b: parseInt(h.slice(4, 6), 16)
-  };
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
 
-// hex → {h, s, b}  (HSB / HSV)
-function cpHexToHsb(hex) {
-  const { r, g, b } = cpHexToRgb(hex);
-  const rn = r / 255, gn = g / 255, bn = b / 255;
-  const max = Math.max(rn, gn, bn);
-  const min = Math.min(rn, gn, bn);
-  const delta = max - min;
+function cpRgbToHex(r, g, b) {
+  const t = (v) => ('0' + Math.round(cpClamp(v, 0, 255)).toString(16)).slice(-2);
+  return ('#' + t(r) + t(g) + t(b)).toUpperCase();
+}
 
-  let h = 0;
-  if (delta !== 0) {
-    if      (max === rn) h = ((gn - bn) / delta) % 6;
-    else if (max === gn) h = (bn - rn) / delta + 2;
-    else                 h = (rn - gn) / delta + 4;
-    h = Math.round(h * 60);
+// HSV(0~360, 0~1, 0~1) → RGB(0~255)
+function cpHsvToRgb(h, s, v) {
+  h = ((h % 360) + 360) % 360;
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  if      (h <  60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else              { r = c; b = x; }
+  return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
+}
+
+// RGB(0~255) → HSV. 무채색이면 색상을 유지한다(fallbackH)
+function cpRgbToHsv(r, g, b, fallbackH) {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn), d = max - min;
+  let h = fallbackH || 0;
+  if (d > 1e-9) {
+    if      (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else                 h = (rn - gn) / d + 4;
+    h *= 60;
     if (h < 0) h += 360;
   }
+  return { h: h, s: max === 0 ? 0 : d / max, v: max };
+}
+
+// sRGB ↔ 선형
+const cpSrgbToLin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const cpLinToSrgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+
+// OKLab (Björn Ottosson). BANG Gradient 의 C++ 쪽과 같은 계수를 쓴다.
+function cpRgbToOklch(r, g, b) {
+  const lr = cpSrgbToLin(r / 255), lg = cpSrgbToLin(g / 255), lb = cpSrgbToLin(b / 255);
+  const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  let H = Math.atan2(B, A) * 180 / Math.PI;
+  if (H < 0) H += 360;
+  return { L: L, C: Math.sqrt(A * A + B * B), H: H };
+}
+
+function cpOklchToRgbRaw(L, C, H) {
+  const a = C * Math.cos(H * Math.PI / 180), b = C * Math.sin(H * Math.PI / 180);
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
   return {
-    h: h,
-    s: max === 0 ? 0 : Math.round((delta / max) * 100),
-    b: Math.round(max * 100)
+    r: cpLinToSrgb( 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) * 255,
+    g: cpLinToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) * 255,
+    b: cpLinToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s) * 255
   };
 }
 
-// hex 문자열 정규화 (#RRGGBB 형식 보장, null 반환 시 유효하지 않음)
+// OKLCH → sRGB. 감마 밖이면 **채널을 자르지 않고 채도를 줄여** 맞춘다.
+// 그냥 자르면 색상이 틀어지고 탁해진다 (BANG Gradient 의 Randomize 와 같은 원칙).
+function cpOklchToRgb(L, C, H) {
+  const inGamut = (c) => {
+    const p = cpOklchToRgbRaw(L, c, H);
+    return p.r >= -0.5 && p.r <= 255.5 && p.g >= -0.5 && p.g <= 255.5 && p.b >= -0.5 && p.b <= 255.5;
+  };
+  let c = C;
+  if (!inGamut(c)) {
+    let lo = 0, hi = C;
+    for (let i = 0; i < 20; i++) { const mid = (lo + hi) / 2; if (inGamut(mid)) lo = mid; else hi = mid; }
+    c = lo;
+  }
+  const p = cpOklchToRgbRaw(L, c, H);
+  return { r: cpClamp(p.r, 0, 255), g: cpClamp(p.g, 0, 255), b: cpClamp(p.b, 0, 255) };
+}
+
+// hex 정규화 (#RRGGBB. 3·4·8자리도 받는다 — 8자리면 알파까지)
 function cpNormHex(raw) {
   let h = String(raw).replace(/[^0-9a-fA-F]/g, '');
-  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  if (h.length === 3 || h.length === 4) h = h.split('').map(c => c + c).join('');
+  if (h.length === 8) h = h.slice(0, 6);
   if (h.length !== 6) return null;
   return '#' + h.toUpperCase();
 }
 
+// ── 현재 색 ──────────────────────────────────────────────────
+
+function cpRgb() { return cpHsvToRgb(cpH, cpS, cpV); }
+
+function cpFormat(kind) {
+  const { r, g, b } = cpRgb();
+  const R = Math.round(r), G = Math.round(g), B = Math.round(b);
+  if (kind === 'rgb')   return cpA < 1 ? `rgba(${R}, ${G}, ${B}, ${+cpA.toFixed(3)})` : `rgb(${R}, ${G}, ${B})`;
+  if (kind === 'oklch') {
+    const o = cpRgbToOklch(R, G, B);
+    const base = `${(o.L * 100).toFixed(1)}% ${o.C.toFixed(3)} ${o.H.toFixed(1)}`;
+    return cpA < 1 ? `oklch(${base} / ${+cpA.toFixed(3)})` : `oklch(${base})`;
+  }
+  if (kind === 'ae')    return `[${(r / 255).toFixed(4)}, ${(g / 255).toFixed(4)}, ${(b / 255).toFixed(4)}, 1]`;
+  return cpCurrentHex;
+}
+
 // ── UI 전체 갱신 ──────────────────────────────────────────────
 
-function cpUpdateUI(hex) {
-  cpCurrentHex = hex;
-  const upper = hex.replace('#', '').toUpperCase();
-  const { r, g, b }       = cpHexToRgb(hex);
-  const { h, s, b: bri }  = cpHexToHsb(hex);
-  document.getElementById('cp-preview').style.background = hex;
-  document.getElementById('cp-hex-val').textContent = upper;
-  document.getElementById('cp-r').textContent   = r;
-  document.getElementById('cp-g').textContent   = g;
-  document.getElementById('cp-b').textContent   = b;
-  document.getElementById('cp-hue').textContent = h;
-  document.getElementById('cp-sat').textContent = s;
-  document.getElementById('cp-bri').textContent = bri;
+function cpUpdateUI() {
+  const { r, g, b } = cpRgb();
+  const R = Math.round(r), G = Math.round(g), B = Math.round(b);
+  cpCurrentHex = cpRgbToHex(R, G, B);
+
+  const prev = document.getElementById('cp-preview');
+  if (prev) prev.style.background = cpCurrentHex;
+  const hexIn = document.getElementById('cp-hex-val');
+  if (hexIn && document.activeElement !== hexIn) hexIn.value = cpCurrentHex.slice(1);
+
+  // 사각형은 현재 색상(hue)의 순색을 바닥에 깐다
+  const sv = document.getElementById('cp-sv');
+  if (sv) {
+    const pure = cpHsvToRgb(cpH, 1, 1);
+    sv.style.background = cpRgbToHex(pure.r, pure.g, pure.b);
+    const k = document.getElementById('cp-sv-knob');
+    k.style.left = (cpS * 100) + '%';
+    k.style.top  = ((1 - cpV) * 100) + '%';
+  }
+  const hk = document.getElementById('cp-hue-knob');
+  if (hk) hk.style.left = ((cpH / 360) * 100) + '%';
+  const af = document.getElementById('cp-alpha-fill');
+  if (af) af.style.background = `linear-gradient(to right, rgba(${R},${G},${B},0), rgb(${R},${G},${B}))`;
+  const ak = document.getElementById('cp-alpha-knob');
+  if (ak) ak.style.left = (cpA * 100) + '%';
+
+  if (!cpEditing) cpRenderFields();
+}
+
+function cpRenderFields() {
+  const { r, g, b } = cpRgb();
+  let keys, vals;
+  if (cpModel === 'hsb') {
+    keys = ['H', 'S', 'B'];
+    vals = [Math.round(cpH), Math.round(cpS * 100), Math.round(cpV * 100)];
+  } else if (cpModel === 'oklch') {
+    const o = cpRgbToOklch(Math.round(r), Math.round(g), Math.round(b));
+    keys = ['L', 'C', 'H'];
+    vals = [(o.L * 100).toFixed(1), o.C.toFixed(3), Math.round(o.H)];
+  } else {
+    keys = ['R', 'G', 'B'];
+    vals = [Math.round(r), Math.round(g), Math.round(b)];
+  }
+  for (let i = 0; i < 3; i++) {
+    document.getElementById('cp-k' + i).textContent = keys[i];
+    const el = document.getElementById('cp-n' + i);
+    if (document.activeElement !== el) el.value = vals[i];
+  }
+}
+
+// HSV 를 직접 세팅
+function cpSetHsv(h, s, v, a) {
+  cpH = ((h % 360) + 360) % 360;
+  cpS = cpClamp(s, 0, 1);
+  cpV = cpClamp(v, 0, 1);
+  if (a !== undefined) cpA = cpClamp(a, 0, 1);
+  cpUpdateUI();
+}
+
+// hex 로 세팅 (무채색이어도 색상은 유지)
+function cpSetHex(hex) {
+  const n = cpNormHex(hex);
+  if (!n) return false;
+  const { r, g, b } = cpHexToRgb(n);
+  const hsv = cpRgbToHsv(r, g, b, cpH);
+  cpSetHsv(hsv.h, hsv.s, hsv.v);
+  return true;
 }
 
 // ── 히스토리 ─────────────────────────────────────────────────
 
 function cpLoadHistory() {
   try { return JSON.parse(localStorage.getItem(CP_HISTORY_KEY) || '[]'); }
-  catch { return []; }
+  catch (e) { return []; }
 }
 
 function cpAddToHistory(hex) {
   let h = cpLoadHistory();
-  // 중복 제거 후 최신 색상을 앞에 추가, 최대 8개 유지
   h = [hex, ...h.filter(c => c !== hex)].slice(0, CP_HISTORY_MAX);
   localStorage.setItem(CP_HISTORY_KEY, JSON.stringify(h));
   cpRenderHistory();
@@ -165,35 +309,15 @@ function cpRenderHistory() {
     const btn = document.createElement('button');
     btn.className        = 'cp-swatch';
     btn.style.background = hex;
-    btn.title            = '#' + hex.replace('#', '').toUpperCase();
+    btn.title            = hex.toUpperCase() + ' — 클릭하면 이 색으로, 복사까지';
     btn.setAttribute('aria-label', btn.title);
     btn.addEventListener('click', () => {
-      cpUpdateUI(hex);
-      const copyFallback = () => {
-        try {
-          const ta = document.createElement('textarea');
-          ta.value = hex;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          document.body.removeChild(ta);
-          setStatus('Copied: ' + hex, 'success'); cpToast('복사 완료!');
-        } catch (e) {
-          setStatus('Color: ' + hex, 'default');
-        }
-      };
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(hex)
-          .then(() => { setStatus('Copied: ' + hex, 'success'); cpToast('복사 완료!'); })
-          .catch(copyFallback);
-      } else {
-        copyFallback();
-      }
+      cpSetHex(hex);
+      cpCopyCurrent();
     });
     container.appendChild(btn);
   });
 
-  // 빈 슬롯 채우기
   for (let i = history.length; i < CP_HISTORY_MAX; i++) {
     const slot = document.createElement('div');
     slot.className = 'cp-swatch cp-swatch--empty';
@@ -201,66 +325,8 @@ function cpRenderHistory() {
   }
 }
 
-// ── AE 네이티브 Color Picker ──────────────────────────────────
-//
-//  [Primary]  evalScript → openAEColorPicker() (hostscript.jsx)
-//             임시 Null + Color Control + executeCommand(2240) 기법으로
-//             AE 네이티브 컬러 피커(eyedropper 포함)를 동기적으로 연다.
-//
-//  [Fallback] 활성 컴프 없을 때 → <input type="color"> 폴백
-//             Chromium 내장 컬러 피커 다이얼로그를 열어 기본 색상 선택.
+// ── 클립보드 ─────────────────────────────────────────────────
 
-const colorInput    = document.getElementById('cp-color-input');
-const eyedropperBtn = document.getElementById('cp-eyedropper-btn');
-const cpStatusEl    = document.getElementById('cp-status');
-let   pickActive    = false;
-
-function cpApplyPickedHex(hex) {
-  cpUpdateUI(hex);
-  cpAddToHistory(hex);
-  setStatus('Picked: ' + hex, 'success');
-}
-
-function cpResetPickState() {
-  pickActive = false;
-  eyedropperBtn.classList.remove('cp-pick-btn--active');
-  cpStatusEl.textContent = '';
-}
-
-eyedropperBtn.addEventListener('click', () => {
-  if (pickActive) return;
-  pickActive = true;
-  eyedropperBtn.classList.add('cp-pick-btn--active');
-  cpStatusEl.textContent = 'Opening color picker...';
-  setStatus('Opening color picker...');
-
-  const initialHex = cpCurrentHex.replace('#', '');
-
-  csInterface.evalScript('openAEColorPicker("' + initialHex + '")', (res) => {
-    cpResetPickState();
-
-    let r;
-    try { r = JSON.parse(res); } catch (e) { r = { success: false, error: String(res) }; }
-
-    if (!r.success) {
-      const msg = r.error || '';
-      cpStatusEl.textContent = 'Error: ' + msg;
-      setStatus('Color picker error', 'error');
-      return;
-    }
-
-    const hex = cpNormHex(r.hex);
-    if (hex && hex !== cpCurrentHex) {
-      cpApplyPickedHex(hex);
-    } else {
-      setStatus('Cancelled', 'default');
-    }
-  });
-});
-
-// ── 클립보드 복사 ─────────────────────────────────────────────
-
-// 미리보기 위에 "복사 완료!" 를 1.2초 표시
 let cpToastTimer = null;
 function cpToast(text) {
   const el = document.getElementById('cp-toast');
@@ -272,24 +338,153 @@ function cpToast(text) {
   cpToastTimer = setTimeout(() => { el.classList.remove('is-on'); setTimeout(() => { el.hidden = true; }, 180); }, 1200);
 }
 
-document.getElementById('cp-copy-btn').addEventListener('click', () => {
-  const hex = cpCurrentHex;
-  (navigator.clipboard
-    ? navigator.clipboard.writeText(hex)
-    : Promise.reject()
-  ).catch(() => {
-    // clipboard API 미지원 폴백
-    const ta = document.createElement('textarea');
-    ta.value = hex;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-  }).then(() => { setStatus('Copied: ' + hex, 'success'); cpToast('복사 완료!'); })
-    .catch(() => setStatus('Copy failed', 'error'));
+function cpCopyText(text) {
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setStatus('Copied: ' + text, 'success'); cpToast('복사 완료!');
+    } catch (e) { setStatus('Copy failed', 'error'); }
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => { setStatus('Copied: ' + text, 'success'); cpToast('복사 완료!'); })
+      .catch(fallback);
+  } else fallback();
+}
+
+function cpCopyCurrent() {
+  const fmt = document.getElementById('cp-fmt');
+  cpCopyText(cpFormat(fmt ? fmt.value : 'hex'));
+}
+
+// ── 사각형 · 슬라이더 드래그 ──────────────────────────────────
+
+// 포인터를 캡처해서 요소 밖으로 끌어도 계속 따라오게 한다 (포토샵·피그마와 같은 감각)
+function cpDrag(el, onMove, onEnd) {
+  const handle = (e) => {
+    const r = el.getBoundingClientRect();
+    onMove(cpClamp((e.clientX - r.left) / r.width, 0, 1),
+           cpClamp((e.clientY - r.top) / r.height, 0, 1));
+  };
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture(e.pointerId);
+    el.focus();
+    handle(e);
+    e.preventDefault();
+  });
+  el.addEventListener('pointermove', (e) => { if (el.hasPointerCapture(e.pointerId)) handle(e); });
+  el.addEventListener('pointerup', (e) => {
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    if (onEnd) onEnd();
+  });
+}
+
+// 방향키로 1칸(Shift=10칸) 미세조정
+function cpArrows(el, stepX, stepY, onEnd) {
+  el.addEventListener('keydown', (e) => {
+    const m = e.shiftKey ? 10 : 1;
+    let dx = 0, dy = 0;
+    if      (e.key === 'ArrowLeft')  dx = -m;
+    else if (e.key === 'ArrowRight') dx =  m;
+    else if (e.key === 'ArrowUp')    dy = -m;
+    else if (e.key === 'ArrowDown')  dy =  m;
+    else return;
+    e.preventDefault();
+    stepX(dx); if (stepY) stepY(dy);
+    cpUpdateUI();
+    if (onEnd) onEnd();
+  });
+}
+
+// ── 네이티브 스포이드 (bin/BANG_Picker.exe) ────────────────────
+
+function cpTempDir() {
+  let base = '';
+  try {
+    base = csInterface.getSystemPath(SystemPath.USER_DATA) || '';
+    if (/^file:/i.test(base)) base = decodeURIComponent(base.replace(/^file:\/{2,3}/i, ''));
+  } catch (e) { return ''; }
+  const dir = (base + '/BANG_Toolbox').replace(/\\/g, '/');
+  try { window.cep.fs.makedir(dir); } catch (e) { /* 이미 있으면 그만 */ }
+  return dir;
+}
+
+const eyedropperBtn = document.getElementById('cp-eyedropper-btn');
+const cpStatusEl    = document.getElementById('cp-status');
+let   cpPickActive  = false;
+
+function cpResetPickState() {
+  cpPickActive = false;
+  eyedropperBtn.classList.remove('cp-pick-btn--active');
+  cpStatusEl.textContent = '';
+}
+
+eyedropperBtn.addEventListener('click', () => {
+  if (cpPickActive) return;
+
+  const exe = extPath('bin/BANG_Picker.exe');
+  const dir = cpTempDir();
+  if (!dir) { setStatus('임시 폴더를 만들 수 없습니다', 'error'); return; }
+  const out = dir + '/pick_' + Date.now() + '.txt';
+
+  let proc;
+  try { proc = window.cep.process.createProcess(exe, out); } catch (e) { proc = null; }
+  if (!proc || proc.err !== 0 || proc.data < 0) {
+    setStatus('스포이드 도우미를 실행할 수 없습니다 — bin/BANG_Picker.exe 확인', 'error');
+    cpStatusEl.textContent = 'BANG_Picker.exe not found';
+    return;
+  }
+
+  cpPickActive = true;
+  eyedropperBtn.classList.add('cp-pick-btn--active');
+  cpStatusEl.textContent = '화면에서 색을 고르세요 — 휠=확대, 방향키=1px, Esc=취소';
+  setStatus('화면에서 색을 고르세요 (Esc 취소)');
+
+  window.cep.process.onquit(proc.data, () => {
+    cpResetPickState();
+    let res = null;
+    try { res = window.cep.fs.readFile(out); } catch (e) { res = null; }
+    try { window.cep.fs.deleteFile(out); } catch (e) { /* 남아도 무해 */ }
+
+    const hex = res && res.err === 0 ? cpNormHex(res.data) : null;
+    if (!hex) { setStatus('Cancelled', 'default'); return; }
+    cpSetHex(hex);
+    cpAddToHistory(cpCurrentHex);
+    cpCopyCurrent();      // 집자마자 클립보드로 — 바로 붙여넣을 수 있게
+  });
 });
 
-// ── 히스토리 초기화 ───────────────────────────────────────────
+// ── AE 와 주고받기 ────────────────────────────────────────────
+
+document.getElementById('cp-apply-btn').addEventListener('click', () => {
+  const { r, g, b } = cpRgb();
+  setStatus('색 적용 중...');
+  evalScript(`applyColorToSelection(${(r / 255).toFixed(6)}, ${(g / 255).toFixed(6)}, ${(b / 255).toFixed(6)})`, (raw) => {
+    let res; try { res = JSON.parse(raw); } catch (e) { res = { success: false, error: String(raw) }; }
+    if (res.success) setStatus(res.message || '적용했습니다', 'success');
+    else setStatus(res.error || '적용 실패', 'error');
+  });
+});
+
+document.getElementById('cp-read-btn').addEventListener('click', () => {
+  setStatus('선택에서 색 읽는 중...');
+  evalScript('readColorFromSelection()', (raw) => {
+    let res; try { res = JSON.parse(raw); } catch (e) { res = { success: false, error: String(raw) }; }
+    if (!res.success) { setStatus(res.error || '색을 찾지 못했습니다', 'error'); return; }
+    const hex = cpNormHex(res.hex);
+    if (!hex) { setStatus('색을 찾지 못했습니다', 'error'); return; }
+    cpSetHex(hex);
+    cpAddToHistory(cpCurrentHex);
+    setStatus((res.message || 'Read') + ': ' + cpCurrentHex, 'success');
+  });
+});
+
+document.getElementById('cp-copy-btn').addEventListener('click', cpCopyCurrent);
 
 document.getElementById('cp-clear-btn').addEventListener('click', () => {
   localStorage.removeItem(CP_HISTORY_KEY);
@@ -297,9 +492,80 @@ document.getElementById('cp-clear-btn').addEventListener('click', () => {
   setStatus('History cleared');
 });
 
+// ── 입력 배선 ────────────────────────────────────────────────
+
+(function cpWire() {
+  const commit = () => cpAddToHistory(cpCurrentHex);
+
+  const sv = document.getElementById('cp-sv');
+  cpDrag(sv, (x, y) => cpSetHsv(cpH, x, 1 - y), commit);
+  cpArrows(sv, (d) => { cpS = cpClamp(cpS + d / 100, 0, 1); }, (d) => { cpV = cpClamp(cpV - d / 100, 0, 1); }, commit);
+
+  const hue = document.getElementById('cp-hue-bar');
+  cpDrag(hue, (x) => cpSetHsv(x * 360, cpS, cpV), commit);
+  cpArrows(hue, (d) => { cpH = ((cpH + d) % 360 + 360) % 360; }, null, commit);
+
+  const alpha = document.getElementById('cp-alpha-bar');
+  cpDrag(alpha, (x) => cpSetHsv(cpH, cpS, cpV, x), commit);
+  cpArrows(alpha, (d) => { cpA = cpClamp(cpA + d / 100, 0, 1); }, null, commit);
+
+  // hex 입력
+  const hexIn = document.getElementById('cp-hex-val');
+  hexIn.addEventListener('focus', () => hexIn.select());
+  hexIn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { hexIn.blur(); }
+    else if (e.key === 'Escape') { hexIn.value = cpCurrentHex.slice(1); hexIn.blur(); }
+  });
+  hexIn.addEventListener('blur', () => {
+    if (cpSetHex(hexIn.value)) cpAddToHistory(cpCurrentHex);
+    else hexIn.value = cpCurrentHex.slice(1);
+  });
+
+  // 모델 전환
+  document.querySelectorAll('.cp-model').forEach(btn => {
+    btn.addEventListener('click', () => {
+      cpModel = btn.dataset.model;
+      document.querySelectorAll('.cp-model').forEach(b => b.classList.toggle('is-on', b === btn));
+      cpRenderFields();
+    });
+  });
+
+  // 숫자 세 칸 — 타이핑 + ↑↓
+  for (let i = 0; i < 3; i++) {
+    const el = document.getElementById('cp-n' + i);
+    el.addEventListener('focus', () => { cpEditing = true; el.select(); });
+    el.addEventListener('blur',  () => { cpEditing = false; cpApplyFields(); cpRenderFields(); });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { el.blur(); return; }
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const stepBase = (cpModel === 'oklch' && i === 1) ? 0.005 : 1;
+      const step = (e.shiftKey ? 10 : 1) * stepBase * (e.key === 'ArrowUp' ? 1 : -1);
+      el.value = (parseFloat(el.value || '0') + step).toFixed(stepBase < 1 ? 3 : (cpModel === 'oklch' && i === 0 ? 1 : 0));
+      cpApplyFields();
+    });
+  }
+})();
+
+// 숫자 칸 → 색. 모델에 따라 해석이 다르다.
+function cpApplyFields() {
+  const n = [0, 1, 2].map(i => parseFloat(document.getElementById('cp-n' + i).value));
+  if (n.some(v => isNaN(v))) return;
+  if (cpModel === 'hsb') {
+    cpSetHsv(n[0], n[1] / 100, n[2] / 100);
+  } else if (cpModel === 'oklch') {
+    const p = cpOklchToRgb(cpClamp(n[0] / 100, 0, 1), Math.max(0, n[1]), n[2]);
+    const hsv = cpRgbToHsv(p.r, p.g, p.b, n[2]);
+    cpSetHsv(hsv.h, hsv.s, hsv.v);
+  } else {
+    const hsv = cpRgbToHsv(cpClamp(n[0], 0, 255), cpClamp(n[1], 0, 255), cpClamp(n[2], 0, 255), cpH);
+    cpSetHsv(hsv.h, hsv.s, hsv.v);
+  }
+}
+
 // ── 초기화 ───────────────────────────────────────────────────
 
-cpUpdateUI('#4CAF50');
+cpSetHex('#4CAF50');
 cpRenderHistory();
 
 // ── Green Null Creator ────────────────────────────────────────

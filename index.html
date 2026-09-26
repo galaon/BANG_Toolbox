@@ -81,24 +81,39 @@
           <span class="cp-toast" id="cp-toast" role="status" aria-live="polite" hidden>복사 완료!</span>
           <div class="cp-hex-overlay">
             <span class="cp-hash">#</span>
-            <span class="cp-hex-val" id="cp-hex-val">4CAF50</span>
+            <input class="cp-hex-val" id="cp-hex-val" value="4CAF50" spellcheck="false" maxlength="8"
+                   aria-label="hex 색상값" title="hex 를 입력하고 Enter">
           </div>
         </div>
 
         <!-- 값: R·G·B / H·S·B (가로 꽉 채움) -->
         <div class="cp-values">
-          <div class="cp-rgb-row">
-            <span class="cp-rgb-chip"><span class="cp-chip-key">R</span><b class="cp-chip-val" id="cp-r">76</b></span>
-            <span class="cp-rgb-chip"><span class="cp-chip-key">G</span><b class="cp-chip-val" id="cp-g">175</b></span>
-            <span class="cp-rgb-chip"><span class="cp-chip-key">B</span><b class="cp-chip-val" id="cp-b">80</b></span>
+          <div class="cp-model-row">
+            <button class="cp-model is-on" data-model="rgb">RGB</button>
+            <button class="cp-model" data-model="hsb">HSB</button>
+            <button class="cp-model" data-model="oklch">OKLCH</button>
           </div>
           <div class="cp-rgb-row">
-            <span class="cp-rgb-chip"><span class="cp-chip-key">H</span><b class="cp-chip-val" id="cp-hue">123</b></span>
-            <span class="cp-rgb-chip"><span class="cp-chip-key">S</span><b class="cp-chip-val" id="cp-sat">57</b></span>
-            <span class="cp-rgb-chip"><span class="cp-chip-key">B</span><b class="cp-chip-val" id="cp-bri">69</b></span>
+            <label class="cp-rgb-chip"><span class="cp-chip-key" id="cp-k0">R</span><input class="cp-chip-in" id="cp-n0" inputmode="decimal"></label>
+            <label class="cp-rgb-chip"><span class="cp-chip-key" id="cp-k1">G</span><input class="cp-chip-in" id="cp-n1" inputmode="decimal"></label>
+            <label class="cp-rgb-chip"><span class="cp-chip-key" id="cp-k2">B</span><input class="cp-chip-in" id="cp-n2" inputmode="decimal"></label>
           </div>
         </div>
 
+      </div>
+
+      <!-- 색 고르기: 채도·명도 사각형 + 색상 · 불투명도 슬라이더 -->
+      <div class="cp-sv" id="cp-sv" tabindex="0" role="slider" aria-label="Saturation and Brightness">
+        <div class="cp-sv-white"></div>
+        <div class="cp-sv-black"></div>
+        <div class="cp-sv-knob" id="cp-sv-knob"></div>
+      </div>
+      <div class="cp-slider cp-slider--hue" id="cp-hue-bar" tabindex="0" role="slider" aria-label="Hue">
+        <div class="cp-slider-knob" id="cp-hue-knob"></div>
+      </div>
+      <div class="cp-slider cp-slider--alpha" id="cp-alpha-bar" tabindex="0" role="slider" aria-label="Opacity">
+        <div class="cp-alpha-fill" id="cp-alpha-fill"></div>
+        <div class="cp-slider-knob" id="cp-alpha-knob"></div>
       </div>
 
       <!-- 히스토리 (카드 안) -->
@@ -110,6 +125,18 @@
             <line x1="10" y1="2" x2="2"  y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </button>
+      </div>
+
+      <!-- AE 와 주고받기 · 복사 형식 -->
+      <div class="cp-actions">
+        <button class="cp-act" id="cp-apply-btn" title="고른 색을 선택한 레이어에 적용 — 텍스트 fill · 셰이프 fill/stroke · 솔리드 · 선택된 이펙트의 Color 파라미터">Apply</button>
+        <button class="cp-act" id="cp-read-btn" title="선택한 레이어·프로퍼티에서 색을 가져오기">Read</button>
+        <select class="cp-fmt" id="cp-fmt" title="복사할 형식">
+          <option value="hex">#hex</option>
+          <option value="rgb">rgb()</option>
+          <option value="oklch">oklch()</option>
+          <option value="ae">AE [r,g,b,1]</option>
+        </select>
       </div>
 
       <!-- 피커 상태 (평소 빈 줄) -->

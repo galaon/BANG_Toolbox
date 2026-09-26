@@ -3,6 +3,32 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.7.0] — 2026-09-27
+
+### Changed (Color Picker — 전면 교체)
+- **보이지 않는 임시 레이어를 쓰던 방식을 없았습니다.** 예전에는 Null + Color Control 이펙트를 만들고
+  `executeCommand(2240)` 으로 AE 다이얼로그를 띄웠습니다 — 컴프를 건드리고 undo 를 더럽힐다는 문제가 있었습니다.
+- **패널 안 피커** — 채도·명도 사각형 + 색상·불투명도 슬라이더. 드래그하면 사각형 밖으로 나가도 따라오고,
+  방향키로 1칸(Shift 10칸) 미세조정됩니다.
+- **HEX · RGB · HSB · OKLCH 입력** — 세 칸의 의미를 버튼으로 바꾸고 값을 직접 타이핑하거나 ↑↓ 로 올리고 내릴 수 있습니다.
+  OKLCH 로 감마 밖의 값을 넣으면 **채널을 자르지 않고 채도만 줄여** 맞춥니다 — 밝기와 색상은 그대로 있습니다.
+- **복사 형식 선택** — `#hex` · `rgb()` · `oklch()` · `AE [r,g,b,1]`.
+- 히스토리는 그대로입니다 — 색을 고를 때마다 하나씩 쌓이고, 스와치를 누르면 그 색으로 돌아가며 복사됩니다.
+
+### Added (Color Picker)
+- **화면 스포이드 — 확대 루페 달린 전체화면 오버레이** (`bin/BANG_Picker.exe`).
+  화면을 한 번 캐처해 얼린 뒤 그 위에 띄우므로 보이는 그대로 집힙니다. AE 밖(브라우저·포토샵·바탕화면)에서도 됩니다.
+  - 휴=확대(4~32배) · 방향키=1px(Shift 10px) · 클릭·Enter=고르기 · Esc·오른쪽 클릭=취소
+  - 고르면 히스토리에 쌓이고 선택한 형식으로 **바로 클립보드에 복사**됩니다.
+  - 누른 클릭은 오버레이가 삼키므로 밑에 깔린 AE 에서 레이어가 선택되거나 움직이지 않습니다.
+- **`Apply`** — 고른 색을 선택한 대상에 넣습니다: 선택된 **색 프로퍼티**(이펙트의 Color 등)가 있으면 그것을,
+  없으면 텍스트 fill · 셰이프 fill/stroke · 솔리드 색을 바꿉니다 (단일 undo 그룹).
+- **`Read`** — 반대로 선택에서 색을 가져옵니다.
+
+### Note
+- 스포이드 도우미는 **Windows 전용**이며 확장 폴더 안 `bin/` 에 들어갑니다. 없으면 패널이 그렇다고 알려줍니다.
+- CEP 안에서는 브라우저로 화면 픽셀을 읽을 수 없습니다(실측: `EyeDropper` 는 2ms 만에 AbortError, `getDisplayMedia` 는 Permission denied). 그래서 네이티브 도우미를 씁니다.
+
 ## [1.6.0] — 2026-09-26
 
 ### Added (BANG Stroke)

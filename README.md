@@ -26,7 +26,9 @@
   — 위치는 선택 레이어들의 **오브젝트 중심**(마스크가 있으면 **마스크 영역 중심**)의 평균점.
 - **Anchor Point (9방향)** — 3×3 버튼으로 앵커포인트를 이동. 시각적 위치는 그대로 유지되도록
   Scale·Z회전을 반영해 Position을 자동 보정하며, 마스크가 있으면 **마스크 영역 기준**으로 정렬합니다.
-- **Color Picker** — AE 네이티브 컬러 피커를 호출해 색을 추출하고 HEX / RGB / HSB 표시 + 색상 히스토리 저장.
+- **Color Picker** — 자체 피커입니다. 채도·명도 사각형 + 색상·불투명도 슬라이더, `HEX`/`RGB`/`HSB`/**`OKLCH`** 입력(감마 밖이면 채널을 자르지 않고 채도만 줄여 맞춥니다), 색상 히스토리, `#hex`·`rgb()`·`oklch()`·`AE [r,g,b,1]` 형식 복사.
+  **화면 스포이드**는 확대 루페가 달린 전체화면 오버레이(`bin/BANG_Picker.exe`, Windows)로 AE 밖에서도 집을 수 있고, 집는 즉시 히스토리에 쌓이며 클립보드로 복사됩니다.
+  `Apply` 는 고른 색을 선택한 텍스트·셰이프·솔리드·이펙트 Color 파라미터에 넣고, `Read` 는 그 반대입니다.
 - **Crop Precomp** — 프리컴프 크기를 내부 레이어 경계(Stroke 포함)에 맞게 자릅니다. 부모 컴프에서 프리컴프 레이어를 선택해
   실행하거나 프리컴프 안에서 실행. 모든 인스턴스의 앵커를 보정해 **시각적 위치가 변하지 않습니다**. 여백과 전체 프레임 샘플링은 프리컴프 안에 생기는 **`BANG Crop` 컨트롤러(`Pad (px)`, `All Frames`)** 로 조절 — 값을 바꾸면 자동으로 다시 잘립니다.
 - **Cloner (네이티브 이펙트 `BANG Cloner`)** — Cinema 4D Cloner 를 참고한 인스턴스 클로너. 레이어를 복제하지 않고 소스의 현재 프레임을 N개 변환·합성하므로 **개수와 무관하게 애니메이션 타이밍이 정확**하고 가볍습니다(1000개 ≈ 0.1 s). Layout Linear/Grid/Radial/**Path**(`Path Layer` 로 컴프 안 셰이프 레이어 선택 — 펜·사각형·타원, `Speed`로 흐르는 애니메이션·`Reverse`·`Loop`·`Start/End`; 레이어와 셰이프를 함께 선택해 타일을 누르면 자동 설정) (그룹별 정리, 배치에 맞는 그룹만 펼쳐짐) · 간격은 소스 크기와 무관한 **Gap**(이웃 경계 사이 px, 음수 = 겹침) · Linear `Origin Index`(원본이 몇 번째인지)·`Direction`·`Offset` · Grid `Columns/Rows`·`Gap X/Y`·`Origin X/Y` + 9방향 `Origin Preset` 버튼 · Radial `Radius`·`Start Angle`·`Sweep`·`Face Outward`·`Center on Object`/`Center` · Step `Rotation/Scale Step`·`End Opacity` · Random `Seed`·`Random Position/Rotation/Scale/Opacity` · **`Bake to Layers`**(클론을 실제 레이어로). 각도 항목 아래 **Nudge 퀵 버튼** 한 줄(−360 −90 −15 −2.5 −1 · 0 · +1 +2.5 +15 +90 +360, 0 = 리셋), Sweep 프리셋(45·90·180·270·360), Origin 3×3 화살표 버튼. `plugins/BANG_Cloner.aex` 설치 필요(INSTALL.txt 2‑1) — 미설치 시 패널은 스크립트 클로너(`BANG 클로너` Pseudo Effect + 표현식 레이어 복제, 래스터라이즈 지원)로 동작합니다.

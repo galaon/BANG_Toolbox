@@ -70,7 +70,7 @@ New-Item -ItemType Directory -Force -Path $target | Out-Null
 $rcArgs = @(
   "`"$RepoRoot`"", "`"$target`"",
   '/MIR', '/NJH', '/NP', '/NDL',
-  '/XD', '.git', 'tools', 'dist', 'backups',
+  '/XD', '.git', 'tools', 'dist', 'backups', 'native',   # native = C++ 소스, 런타임에 필요 없다 (bin\ 의 exe 만 나간다)
   '/XF', '.gitignore', 'README.md', 'AGENTS.md', 'CHANGELOG.md', '*.patch'
 )
 if ($WhatIf) { $rcArgs += '/L' }

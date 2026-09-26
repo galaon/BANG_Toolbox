@@ -55,8 +55,11 @@ New-Item -ItemType Directory -Force -Path $extRoot | Out-Null
 
 # extension payload (only what the panel needs at runtime)
 Copy-Item (Join-Path $RepoRoot 'index.html') $extRoot
-foreach ($dir in 'CSXS', 'css', 'js', 'jsx') {
-  Copy-Item (Join-Path $RepoRoot $dir) (Join-Path $extRoot $dir) -Recurse
+foreach ($dir in 'CSXS', 'css', 'js', 'jsx', 'bin') {
+  $src = Join-Path $RepoRoot $dir
+  if (Test-Path $src) { Copy-Item $src (Join-Path $extRoot $dir) -Recurse }
+  elseif ($dir -eq 'bin') { Write-Warning "bin\ not found - 스포이드 도우미(BANG_Picker.exe) 가 빠집니다 (nativeuild-native.ps1 먼저 실행)" }
+  else { throw "missing payload folder: $src" }
 }
 # icons: manifest references ./icons/icon_32.png; ship the folder even if empty
 $iconsSrc = Join-Path $RepoRoot 'icons'

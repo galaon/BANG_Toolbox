@@ -1,10 +1,11 @@
-# native/ — BANG 네이티브 이펙트 플러그인 (After Effects C++ SDK)
+# native/ — BANG 네이티브 코드 (AE 이펙트 + 스포이드 도우미)
 
 | 항목 | 내용 |
 |---|---|
 | 툴체인 | VS 2022 Build Tools (v143, MSVC 14.44) + Windows SDK 10 · MSBuild · SDK 의 `PiPLtool.exe` |
 | SDK | 저장소 밖 `../../sdk/AfterEffectsSDK_26.5_win/Examples` (환경변수 `AE_SDK_DIR` 로 재지정 가능). **SDK 는 git 에 넣지 않는다** |
 | 출력 | `native/out/Release/*.aex` (git 제외) → `tools/build.ps1` 이 zip 의 `plugins/` 에 동봉 |
+| 스포이드 도우미 | `BANG_Picker/` → `out/Release/BANG_Picker.exe` → `build-native.ps1` 이 `com.bang.toolbox/bin/` 으로 복사 (AE SDK 무관, 패널이 직접 실행) |
 | 설치 경로 | `C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\Plug-ins\BANG\` (관리자) |
 
 ## 빌드 · 설치 · 검증
@@ -111,3 +112,32 @@ native/
 - 설치 권한: `tools\grant-write-access.ps1` 한 번(UAC 1회) → `Plug-ins\BANG` 과 CEP 폴더에 사용자 Modify 권한 → 이후 복사에 UAC 불필요. `build-native.ps1 -Install` 은 쓰기 가능하면 직접 복사하고 해시로 검증(AE 실행 중이면 검증 실패로 알려줌).
 - **같은 버전 번호의 `.aex` 를 바꿔 끼우면** AE 디스크 캐시가 이전 빌드의 렌더를 그대로 돌려준다(파라미터 상태가 같으면) → `reload-in-ae.ps1` 이 재시작 후 `app.purge(PurgeTarget.ALL_CACHES)`. 검증 전엔 반드시 퍼지.
 - `applyNativeEffect` 의 프로브 Null 은 맨 위에 추가돼 레이어 인덱스가 1씩 밀린다 → 표현식엔 캡처한 인덱스 대신 `layer.index` 를 쓴다.
+
+## BANG_Picker.exe — 화면 스포이드 도우미
+
+패널의 Color Picker 가 `window.cep.process.createProcess(exe, <결과파일>)` 로 실행한다.
+고르면 결과파일에 `#RRGGBB` 를 쓰고 0 으로, 취소하면 파일 없이 1 로 끝난다.
+진단용 플래그: `-probe`(화면 계측값만 쓰고 종료) · `-probe2`(창 rect·가시성·포그라운드 여부).
+
+**왜 네이티브인가** — CEP(Chromium 99) 에서 화면 픽셀을 읽는 브라우저 경로는 전부 막혔 있다. 실측:
+`window.EyeDropper` 는 **존재하지만** `open()` 이 2ms 만에 `AbortError` (CEF 가 오버레이를 못 띄운다),
+`navigator.mediaDevices.getDisplayMedia` 는 `NotAllowedError: Permission denied`. 다시 조사하지 말 것.
+
+구조는 PowerToys Color Picker · Just Color Picker 와 같다:
+화면을 `BitBlt(SRCCOPY | CAPTUREBLT)` 로 한 번 떠서 DIB 에 담고, 그 정지화면을 가상화면 전체 크기의
+`WS_POPUP | WS_EX_TOPMOST` 창에 깔고, 커서 주변을 `StretchBlt` + `COLORONCOLOR`(최근접)로 확대해 보여준다.
+
+☠ **하루를 날릴 번한 함정 세 개** (전부 실측으로 잡았다):
+
+1. **CEP 가 자식을 `STARTUPINFO.wShowWindow = SW_HIDE` 로 띄운다.** Windows 는 프로세스의 **첫 `ShowWindow` 호출**을
+   그 값으로 가로채기 때문에 한 번만 부르면 창이 영영 안 뜼다 — 그런데 프로세스는 살아있고 `GetWindowRect`·`IsWindowVisible` 도
+   정상으로 나와서 원인을 찾기 아주 어렵다. `ShowWindow` 를 **두 번** 부른다.
+2. **포그라운드를 못 가져온다.** 백그라운드 프로세스(AE)가 띄운 창은 `SetForegroundWindow` 가 먹지 않아
+   `WM_MOUSEMOVE`·`WM_LBUTTONDOWN`·`WM_KEYDOWN` 이 아예 안 온다(`SetCapture` 도 마찬가지). 그래서 입력은
+   `WH_MOUSE_LL` · `WH_KEYBOARD_LL` 저수준 후크로 받는다. 후크에서 `return 1` 로 **입력을 삼켜야** 밑에 깔린 AE 로
+   클릭이 새지 않는다(안 그러면 색 고를 때마다 레이어가 선택되거나 끌린다).
+3. **색은 화면이 아니라 캐처 버퍼에서 읽는다.** 안 그러면 우리가 그린 루페·격자가 결과 색에 섞인다.
+
+그 밖에: 고DPI 좌표가 어긋나지 않게 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)`,
+다중 모니터는 `SM_XVIRTUALSCREEN` 기준(원점이 음수일 수 있다), 재취드는 루페 영역만 `InvalidateRect`
+(4K 전체를 매번 칠하면 느리다), 스포이드를 부른 클릭의 떼기를 한 번 삼킨 뒤부터 입력을 센다(`g_armed`).

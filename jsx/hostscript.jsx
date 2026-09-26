@@ -179,111 +179,120 @@ function _moveAnchor(layer, time, h, v) {
     }
 }
 
-// ── Screen Color Picker — AE 네이티브 방식 ────────────────────
+// ── Color Picker — 선택과 색 주고받기 ───────────
 //
-//  executeCommand(2240) 기법 — 임시 Null + Color Control.
-//  단, Null 을 shy + disabled 로 설정하고 comp.hideShyLayers = true
-//  로 전환해 타임라인에 전혀 표시되지 않도록 처리.
-//  색상 선택 완료 후 즉시 Null 삭제 및 hideShyLayers 원복.
+//  화면에서 색을 집는 일은 더 이상 여기서 하지 않는다. 예전에는 임시 Null + Color Control 을
+//  만들고 executeCommand(2240) 으로 AE 다이얼로그를 띄웠는데, 컴프를 건드리고 undo 를
+//  더럽힐러서 내보냈다 — 이제 패널이 bin/BANG_Picker.exe 를 쓴다.
+//  여기는 고른 색을 **선택에 넣고 빼는** 일만 한다.
 
-function openAEColorPicker(initialHex) {
-    // 활성 컴프 확인 -- 없으면 임시 컴프를 직접 생성해서 사용
-    var activeItem    = app.project.activeItem;
-    var usingTempComp = !(activeItem instanceof CompItem);
-    var comp          = null;
-    var tempComp      = null;
-    var tempNull      = null;
-    var nullSource    = null;
-    var savedHideShy  = false;
-
-    try {
-        if (usingTempComp) {
-            // 컴프 없음 -- 피킹 전용 임시 컴프 생성 (100x100, 1초, 30fps)
-            tempComp = app.project.items.addComp("__cp_comp__", 100, 100, 1, 1, 30);
-            comp = tempComp;
-            // 새 컴프를 뷰어에 열어 타임라인·Effect Controls 패널이 활성화되도록 함.
-            // openInViewer() 없이는 executeCommand(2240) 이 다이얼로그를 띄우지 못함.
-            tempComp.openInViewer();
-        } else {
-            comp = activeItem;
-            savedHideShy = comp.hideShyLayers;
+// 셰이프 트리를 뒤져 첫 번째 Fill/Stroke 색 프로퍼티를 모은다
+function bangCollectShapeColors(group, out) {
+    for (var i = 1; i <= group.numProperties; i++) {
+        var pr = group.property(i);
+        if (pr.matchName === "ADBE Vector Graphic - Fill" || pr.matchName === "ADBE Vector Graphic - Stroke") {
+            var c = pr.property("ADBE Vector Fill Color") || pr.property("ADBE Vector Stroke Color");
+            if (c) out.push(c);
+        } else if (pr.propertyType === PropertyType.INDEXED_GROUP || pr.propertyType === PropertyType.NAMED_GROUP) {
+            bangCollectShapeColors(pr, out);
         }
-
-        // 초기 색상 파싱 (RRGGBB -> 0~1 범위)
-        var ir = 0.298, ig = 0.686, ib = 0.314;
-        var hexStr = String(initialHex).replace(/[^0-9a-fA-F]/g, "");
-        if (hexStr.length === 6) {
-            ir = parseInt(hexStr.substr(0, 2), 16) / 255;
-            ig = parseInt(hexStr.substr(2, 2), 16) / 255;
-            ib = parseInt(hexStr.substr(4, 2), 16) / 255;
-        }
-
-        // 기존 레이어 선택 해제
-        for (var i = 1; i <= comp.numLayers; i++) {
-            comp.layer(i).selected = false;
-        }
-
-        // 임시 Null 생성 (shy + disabled -- 타임라인에 표시 안 됨)
-        tempNull         = comp.layers.addNull();
-        nullSource       = tempNull.source;
-        tempNull.name    = "__cp_temp__";
-        tempNull.shy     = true;
-        tempNull.enabled = false;
-        comp.hideShyLayers = true;
-
-        // Color Control 이펙트 추가 및 초기 색상 설정
-        var fxList    = tempNull.property("ADBE Effect Parade");
-        var fx        = fxList.addProperty("ADBE Color Control");
-        var colorProp = fx.property(1);
-        colorProp.setValue([ir, ig, ib, 1.0]);
-
-        // Color 프로퍼티 선택 후 Edit Value 실행 (AE 네이티브 컬러 피커)
-        tempNull.selected  = true;
-        colorProp.selected = true;
-        app.executeCommand(2240);
-        // 다이얼로그가 열린 동안 이 줄에서 블록됨
-
-        // 결과 색상 읽기
-        var c = colorProp.value;
-
-        // ── 정리 ──────────────────────────────────────────────
-        // 활성 컴프 사용 시: hideShyLayers 원복
-        if (!usingTempComp) {
-            comp.hideShyLayers = savedHideShy;
-        }
-
-        // Null 레이어 및 소스 아이템 제거
-        tempNull.remove();
-        tempNull = null;
-        try { nullSource.remove(); } catch (e2) {}
-        nullSource = null;
-
-        // 임시 컴프 제거 (임시 생성한 경우에만)
-        if (usingTempComp) {
-            try { tempComp.remove(); } catch (e3) {}
-            tempComp = null;
-        }
-        // ──────────────────────────────────────────────────────
-
-        // hex 변환
-        var h2 = function(v) {
-            var clamped = Math.max(0, Math.min(1, v));
-            var dec = Math.round(clamped * 255);
-            var s = dec.toString(16).toUpperCase();
-            return (s.length < 2) ? "0" + s : s;
-        };
-        var resultHex = h2(c[0]) + h2(c[1]) + h2(c[2]);
-
-        return ok({ hex: resultHex });
-
-    } catch (e) {
-        // 오류 시 생성된 모든 임시 객체 정리
-        try { if (!usingTempComp) comp.hideShyLayers = savedHideShy; } catch (e2) {}
-        if (tempNull   !== null) { try { tempNull.remove();   } catch (e3) {} }
-        if (nullSource !== null) { try { nullSource.remove(); } catch (e4) {} }
-        if (tempComp   !== null) { try { tempComp.remove();   } catch (e5) {} }
-        return err(String(e));
     }
+}
+
+// 지금 선택된 프로퍼티 중 색 프로퍼티 (이펙트의 Color 등) — 있으면 그것이 우선이다
+function bangSelectedColorProps(comp) {
+    var out = [];
+    var sel = comp.selectedProperties;
+    for (var i = 0; i < sel.length; i++) {
+        var pr = sel[i];
+        try {
+            if (pr.propertyValueType === PropertyValueType.COLOR) out.push(pr);
+        } catch (e) {}
+    }
+    return out;
+}
+
+function applyColorToSelection(r, g, b) {
+    var comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return err("열려 있는 컴프가 없습니다.");
+    var col = [r, g, b, 1];
+    var n = 0, what = "";
+
+    app.beginUndoGroup("BANG Apply Color");
+    try {
+        // 1) 선택된 색 프로퍼티가 있으면 그것만 바꾼다
+        var props = bangSelectedColorProps(comp);
+        if (props.length > 0) {
+            for (var i = 0; i < props.length; i++) {
+                try { props[i].setValue(col); n++; } catch (e) {}
+            }
+            what = "프로퍼티";
+        } else {
+            var layers = comp.selectedLayers;
+            if (layers.length === 0) { app.endUndoGroup(); return err("레이어나 색 프로퍼티를 먼저 선택하세요."); }
+            for (var k = 0; k < layers.length; k++) {
+                var L = layers[k];
+                try {
+                    if (L instanceof TextLayer) {
+                        var doc = L.property("ADBE Text Properties").property("ADBE Text Document").value;
+                        doc.applyFill = true;
+                        doc.fillColor = [r, g, b];
+                        L.property("ADBE Text Properties").property("ADBE Text Document").setValue(doc);
+                        n++; what = "텍스트";
+                    } else if (L instanceof ShapeLayer) {
+                        var cols = [];
+                        bangCollectShapeColors(L.property("ADBE Root Vectors Group"), cols);
+                        for (var c = 0; c < cols.length; c++) { try { cols[c].setValue(col); } catch (e2) {} }
+                        if (cols.length > 0) { n++; what = "셰이프"; }
+                    } else if (L.source && L.source.mainSource instanceof SolidSource) {
+                        L.source.mainSource.color = [r, g, b];
+                        n++; what = "솔리드";
+                    }
+                } catch (e3) {}
+            }
+        }
+    } catch (e4) {
+        app.endUndoGroup();
+        return err(String(e4));
+    }
+    app.endUndoGroup();
+
+    if (n === 0) return err("색을 넣을 수 있는 대상이 없습니다 (텍스트·셰이프·솔리드·색 프로퍼티).");
+    return ok({ message: what + " " + n + "개에 적용" });
+}
+
+function bangHex(c) {
+    function h(v) {
+        var x = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).toUpperCase();
+        return x.length === 1 ? "0" + x : x;
+    }
+    return "#" + h(c[0]) + h(c[1]) + h(c[2]);
+}
+
+function readColorFromSelection() {
+    var comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return err("열려 있는 컴프가 없습니다.");
+
+    var props = bangSelectedColorProps(comp);
+    if (props.length > 0) return ok({ hex: bangHex(props[0].value), message: "프로퍼티" });
+
+    var layers = comp.selectedLayers;
+    for (var k = 0; k < layers.length; k++) {
+        var L = layers[k];
+        try {
+            if (L instanceof TextLayer) {
+                var doc = L.property("ADBE Text Properties").property("ADBE Text Document").value;
+                if (doc.applyFill) return ok({ hex: bangHex(doc.fillColor), message: "텍스트" });
+            } else if (L instanceof ShapeLayer) {
+                var cols = [];
+                bangCollectShapeColors(L.property("ADBE Root Vectors Group"), cols);
+                if (cols.length > 0) return ok({ hex: bangHex(cols[0].value), message: "셰이프" });
+            } else if (L.source && L.source.mainSource instanceof SolidSource) {
+                return ok({ hex: bangHex(L.source.mainSource.color), message: "솔리드" });
+            }
+        } catch (e) {}
+    }
+    return err("선택에서 색을 찾지 못했습니다.");
 }
 
 // ── Green Null Creator ────────────────────────────────────────
