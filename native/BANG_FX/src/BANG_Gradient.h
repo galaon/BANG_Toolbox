@@ -23,7 +23,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_GRAD_MAJOR   1
-#define BANG_GRAD_MINOR   3
+#define BANG_GRAD_MINOR   4
 #define BANG_GRAD_BUG     0
 #define BANG_GRAD_STAGE   PF_Stage_DEVELOP
 #define BANG_GRAD_BUILD   1
@@ -37,7 +37,8 @@ enum {
     BG_START,           // Start (점)
     BG_END,             // End (점)
     BG_FIT_H,           // Fit Horizontal — 내용의 좌·우 가운데로
-    BG_FIT_V,           // Fit Vertical   — 내용의 최상단·최하단 가운데로
+    BG_FIT_V,           // Fit Vertical   — 내용의 최상단·최하단 가운데로 (누를 때마다 상↔하 반전)
+    BG_FIT_D,           // Fit Diagonal   — 누를 때마다 사분면을 시계방향으로 (↘ ↙ ↖ ↗)
     BG_LOCK,            // Lock Gradient  — 표현식으로 레이어에 고정(크기·위치 변화를 추종)
     BG_ANGLE_OFF,       // Angle Offset (Angular)
     BG_CONTOUR_SPAN,    // Contour Span (px)

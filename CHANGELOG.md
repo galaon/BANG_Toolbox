@@ -3,24 +3,33 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.5.1] — 2026-09-26
+
+### Changed (BANG Gradient)
+- **`Alpha` 기본값이 `Replace (opacity cuts out)`** 로 바뀌었습니다. 새로 적용하면 정지점 불투명도가 곧바로 레이어 알파를 뚫습니다.
+- **Fit 버튼이 누를 때마다 방향을 뒤집습니다** — `Fit Horizontal` 은 좌→우 ↔ 우→좌, `Fit Vertical` 은 위→아래 ↔ 아래→위.
+
+### Added (BANG Gradient)
+- **`Fit Diagonal` 버튼** — 누를 때마다 사분면을 시계방향으로 돌립니다(↘ → ↙ → ↖ → ↗). 대각선에서도 내용의 모서리에 정확히 붙고, `Lock Gradient` 를 켜면 그대로 따라갑니다.
+
 ## [1.5.0] — 2026-09-26
 
 ### Added (BANG Gradient)
 - **Fit 을 세 개로 나눔** — `Fit Horizontal` · `Fit Vertical` 버튼과 `Lock Gradient` 토글. 이전의 `Fit Keeps Following` 체크박스는 Lock 이 대신합니다.
   - 가로/세로를 각각 누르면 내용의 좌·우 또는 최상단·최하단 가운데로 붙고, 가운데 기준 모양(Radial 등)은 중심→꼭지점입니다.
   - `Lock Gradient` 를 켜면 표현식으로 고정돼 크기·위치 변화를 따라가고, 끄면 그 시점 값으로 굴려 넣습니다.
-- **띄를 더블클릭하면 그 자리에 정지점 추가** — 포토샵·AE 그라데이션 편집기처럼. 색과 불투명도는 그 지점의 값을 그대로 받아옵니다.
-- **⇄ 좌우 반전 버튼** — 띄 오른쪽 끝에. `Reverse` 체크박스와 달리 정지점 위치 값 자체를 뒤집어 계속 편집할 수 있습니다.
+- **바를 더블클릭하면 그 자리에 정지점 추가** — 포토샵·AE 그라데이션 편집기처럼. 색과 불투명도는 그 지점의 값을 그대로 받아옵니다.
+- **⇄ 좌우 반전 버튼** — 바 오른쪽 끝에. `Reverse` 체크박스와 달리 정지점 위치 값 자체를 뒤집어 계속 편집할 수 있습니다.
 - **프리셋** — `Black to White` · `White to Black` · **`Chrome`**(금속 반사) · `Gold` · `Sunset` · `Ocean` · `Fire` · `Rainbow` · `Fade Out`.
 - **`Randomize`** — OKLCh 색상환에서 골라 밝기·채도가 자연스러운 조합을 만듭니다(RGB 난수처럼 탁해지지 않습니다).
 - **Import / Export** — **`.css`** · `.ggr`(GIMP) · `.json`.
   - `.css` 는 colorffy·coolors 가 공유하는 그 형태 그대로: `background: linear-gradient(180deg in oklab, rgba(...) 0.0%, …);` — 각도와 보간 색공간까지 함께 오갑니다. 가져올 때는 `rgba()`·`rgb()`·`#hex`(8자리 알파 포함) 를 모두 읽습니다.
   - `.ggr` 는 문서화된 순수 텍스트 포맷이라 GIMP·Krita·Inkscape 가 그대로 읽습니다. (Photoshop `.grd` 는 비공개 바이너리라 제외)
-- **`Alpha` — `Replace (opacity cuts out)`** — 정지점 불투명도가 원본 위에 얘혀지는 대신 **레이어 알파를 그대로 뚚습니다**. 0% 인 자리는 원래 색이 비치는 게 아니라 투명해집니다.
+- **`Alpha` — `Replace (opacity cuts out)`** — 정지점 불투명도가 원본 위에 얹혀지는 대신 **레이어 알파를 그대로 뚫습니다**. 0% 인 자리는 원래 색이 비치는 게 아니라 투명해집니다.
 
 ### Changed (BANG Gradient)
 - `Color Stops` → **`Gradient Colors`** 로 이름을 바꾸고, `Stops` 개수 슬라이더도 그 안으로 넣었습니다.
-- **띄와 칩이 불투명도를 보여줍니다** — 0% 에 가까울수록 체크무늬이 드러나도록 그렸습니다.
+- **바와 칩이 불투명도를 보여줍니다** — 0% 에 가까울수록 체크무늬가 드러나도록 그렸습니다.
 - ⚠ 파라미터 순서가 바뀜 이전 버전으로 만든 `BANG Gradient` 인스턴스는 **다시 적용**해야 합니다.
 
 ## [1.4.1] — 2026-09-26

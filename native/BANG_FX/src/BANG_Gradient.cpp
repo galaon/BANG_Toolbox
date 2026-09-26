@@ -118,6 +118,8 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     AEFX_CLR_STRUCT(def);
     PF_ADD_BUTTON("", "Fit Vertical", 0, PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY, BG_FIT_V);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON("", "Fit Diagonal", 0, PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY, BG_FIT_D);
+    AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOXX("Lock Gradient", FALSE, PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY, BG_LOCK);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
     PF_ADD_ANGLE("Angle Offset", 0, BG_ANGLE_OFF);
@@ -161,7 +163,7 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
 
     TOPIC_CLOSED("Output " LINE, BG_G_OUT);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Alpha", 2, BG_ALPHA_COMPOSITE, "Composite over original|Replace (opacity cuts out)", BG_ALPHA_MODE);
+    PF_ADD_POPUP("Alpha", 2, BG_ALPHA_REPLACE, "Composite over original|Replace (opacity cuts out)", BG_ALPHA_MODE);
     FSLIDER("Dither", 0, 100, 0, 100, 40, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BG_DITHER);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Blend With Original", 5, BG_BLEND_NORMAL, "Normal|Multiply|Screen|Add|Overlay", BG_BLEND);
@@ -256,14 +258,28 @@ static PF_Err ApplyFit(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* pa
 
     const int shape = (int)params[BG_SHAPE]->u.pd.value;
     double ux = 0, uy = 1;
-    if (mode == 0)      { ux = 1; uy = 0; }
-    else if (mode == 1) { ux = 0; uy = 1; }
-    else {
-        ux = FIX_2_FLOAT(params[BG_END]->u.td.x_value) - FIX_2_FLOAT(params[BG_START]->u.td.x_value);
-        uy = FIX_2_FLOAT(params[BG_END]->u.td.y_value) - FIX_2_FLOAT(params[BG_START]->u.td.y_value);
-        const double ul = std::sqrt(ux * ux + uy * uy);
-        if (ul < 1e-6) { ux = 0; uy = 1; } else { ux /= ul; uy /= ul; }
+    // 지금 방향(Start→End). 버튼을 다시 누를 때 반대편·다음 사분면으로 넘기려고 쓴다.
+    double cux = FIX_2_FLOAT(params[BG_END]->u.td.x_value) - FIX_2_FLOAT(params[BG_START]->u.td.x_value);
+    double cuy = FIX_2_FLOAT(params[BG_END]->u.td.y_value) - FIX_2_FLOAT(params[BG_START]->u.td.y_value);
+    const double cul = std::sqrt(cux * cux + cuy * cuy);
+    if (cul < 1e-6) { cux = 0; cuy = 1; } else { cux /= cul; cuy /= cul; }
+
+    if (mode == 0)      { ux = (cux > 0.001) ? -1 : 1; uy = 0; }         // 좌↔우 토글
+    else if (mode == 1) { ux = 0; uy = (cuy > 0.001) ? -1 : 1; }         // 상↔하 토글
+    else if (mode == 4) {
+        // 사분면 시계방향: ↘(45°) → ↙(135°) → ↖(225°) → ↗(315°)
+        //  (화면 좌표는 y 가 아래로 가므로 각도가 커지는 쪽이 시계방향이다)
+        const double PI = 3.14159265358979;
+        double ang = std::atan2(cuy, cux);                                // -π ~ π
+        if (ang < 0) ang += 2 * PI;
+        const double q = (ang - PI / 4) / (PI / 2);
+        const double frac = std::fabs(q - std::floor(q + 0.5));
+        int idx = (frac < 0.06) ? ((int)std::floor(q + 0.5) + 1) : 0;     // 대각선 위면 다음 칸, 아니면 ↘ 부터
+        idx = ((idx % 4) + 4) % 4;
+        const double a2 = PI / 4 + idx * (PI / 2);
+        ux = std::cos(a2); uy = std::sin(a2);
     }
+    else { ux = cux; uy = cuy; }
     const bool lockOn = (mode == 2) || (mode != 3 && params[BG_LOCK]->u.bd.value != 0);
 
     std::string js;
@@ -437,6 +453,7 @@ static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_Para
 {
     if (extra->param_index == BG_FIT_H) return ApplyFit(in_data, out_data, params, 0);
     if (extra->param_index == BG_FIT_V) return ApplyFit(in_data, out_data, params, 1);
+    if (extra->param_index == BG_FIT_D) return ApplyFit(in_data, out_data, params, 4);
     if (extra->param_index == BG_LOCK)  return ApplyFit(in_data, out_data, params, params[BG_LOCK]->u.bd.value ? 2 : 3);
     if (extra->param_index == BG_RANDOM) return Randomize(in_data, out_data, params);
     if (extra->param_index == BG_IMPORT) return ImportExport(in_data, out_data, params, true);
