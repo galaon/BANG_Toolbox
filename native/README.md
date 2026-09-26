@@ -61,6 +61,9 @@ native/
 - Dither 는 t 에 ±0.5LSB 크기의 해시 잡음을 더해 8bpc 띄를 지운다.
 - 이음매 AA: Repeat·Angular 은 t 가 1→0 으로 끊긴다. 옆·위·아래 픽셀의 t 와 0.45 넘게 벌어지는 픽셀만 4×4 서브샘플. t 를 픽셀마다 다시 구하면 비싸서 세 줄(이전·현재·다음)을 돌려 쓴다.
 - `Fit to Layer`: 버튼(SUPERVISE) → `AEGP_ExecuteScript` 로 sourceRectAtTime 을 재 값이나 표현식을 넣는다. 방향은 누를 때의 Start→End 를 상수로 박아 쓴다. ⚠ **셰이프·텍스트 레이어는 점 파라미터가 컴 좌표**이다(버퍼가 컴 크기). sourceRectAtTime 은 소스 좌표라 `position - anchorPoint` 만큼 옳겨야 맞는다 (실측으로 확인: 회전·스케일은 이펙트 뒤에 적용돼 보정 불필요, 그러나 Position 은 버퍼 좌표에 그대로 반영된다). 솔리드·푸테지는 보정 없음.
+- 교환 포맷: `.css`(colorffy·coolors 식 `linear-gradient(<ang>deg[ in oklab], rgba() p%, …)`, 각도·보간 색공간 왕복) · `.ggr`(GIMP, 문서화된 텍스트) · `.json`(자체). Photoshop `.grd` 는 비공개 바이너리(직렬화된 액션 디스크립터)라 제외.
+- ⚠ **숨긴 스트림은 스크립트 setValue 가 안 된다** — 정지점 줄을 DynamicStream 으로 숨기므로, 파일 임포트 전에 `ApplyStopVisibility(in_data, BG_NUM_STOPS)` 로 전부 펼쳐둔다. 안 그러면 세 번째 이후 정지점이 조용히 빠진다(실제로 겪음). 반면 `params[]` + `change_flags` 는 숨김 여부와 무관하게 쓴다.
+- `Alpha = Replace` 는 그라데이션 불투명도를 over 합성 대신 출력 알파로 쓴다(`oa = (preserveAlpha?ba:1) * ga`).
 - Stops Bar: `PF_PUI_CONTROL` 체크박스 + Drawbot. 칩 클릭 → `PF_AppColorPickerDialog` → `uu.change_flags = PF_ChangeFlag_CHANGED_VALUE`. 커스텀 UI 를 쓰려면 `PF_OutFlag_CUSTOM_UI` 를 GlobalSetup 과 PiPL 에 둘 다 넣어야 한다(안 넣으면 "no custom ui outflag" 오류).
 - 버퍼 확장이 없으므로 `I_EXPAND_BUFFER` 없이 PiPL OutFlags = DEEP_COLOR_AWARE | SEND_UPDATE_PARAMS_UI (0x06000000).
 

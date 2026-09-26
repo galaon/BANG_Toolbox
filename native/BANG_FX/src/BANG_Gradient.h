@@ -23,7 +23,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_GRAD_MAJOR   1
-#define BANG_GRAD_MINOR   1
+#define BANG_GRAD_MINOR   3
 #define BANG_GRAD_BUG     0
 #define BANG_GRAD_STAGE   PF_Stage_DEVELOP
 #define BANG_GRAD_BUILD   1
@@ -36,8 +36,9 @@ enum {
     BG_SHAPE,           // Shape: Linear | Radial | Angular | Diamond | Reflected | Contour
     BG_START,           // Start (점)
     BG_END,             // End (점)
-    BG_FIT,             // Fit to Layer (버튼) — Start·End 를 레이어 내용 크기에 맞춤
-    BG_FIT_FOLLOW,      // Fit Keeps Following — 값 대신 표현식을 걸어 크기 변화를 추종
+    BG_FIT_H,           // Fit Horizontal — 내용의 좌·우 가운데로
+    BG_FIT_V,           // Fit Vertical   — 내용의 최상단·최하단 가운데로
+    BG_LOCK,            // Lock Gradient  — 표현식으로 레이어에 고정(크기·위치 변화를 추종)
     BG_ANGLE_OFF,       // Angle Offset (Angular)
     BG_CONTOUR_SPAN,    // Contour Span (px)
     BG_REPEAT,          // Repeat: Clamp | Repeat | Mirror
@@ -47,10 +48,13 @@ enum {
 
     BG_INTERP,          // Interpolate: sRGB | Linear | OKLab | OKLCh Short | OKLCh Long
     BG_SMOOTH,          // Smoothness (%) — 정지점 사이 이징
-    BG_COUNT,           // Stops (2~8)
-
-    BG_G_STOPS,         // ── Color Stops ──
-    BG_BAR,             //   가로 색 띄 (커스텀 UI) — 미리보기 + 정지점 색 클릭
+    BG_G_STOPS,         // ── Gradient Colors ──
+    BG_BAR,             //   가로 색 띄 (커스텀 UI) — 미리보기 · 칩 클릭=색 · 더블클릭=정지점 추가 · ⇄ =좌우 반전
+    BG_COUNT,           //   Stops (2~8)
+    BG_PRESET,          //   Preset (자주 쓰는 그라데이션)
+    BG_RANDOM,          //   Randomize (OKLCh 색상환에서 골라 그럴듯한 조합을 만든다)
+    BG_IMPORT,          //   Import… (.css / .ggr / .json)
+    BG_EXPORT,          //   Export… (.css / .ggr / .json)
     BG_S1_COLOR, BG_S1_POS, BG_S1_OP,
     BG_S2_COLOR, BG_S2_POS, BG_S2_OP,
     BG_S3_COLOR, BG_S3_POS, BG_S3_OP,
@@ -62,6 +66,7 @@ enum {
     BG_G_STOPS_END,
 
     BG_G_OUT,           // ── Output ──
+    BG_ALPHA_MODE,      // Alpha: Composite(원본 위에) | Replace(불투명도가 레이어 알파를 그대로 뚚는다)
     BG_DITHER,          // Dither (%)
     BG_BLEND,           // Blend With Original: Normal | Multiply | Screen | Add | Overlay
     BG_AMOUNT,          // Amount (%)
@@ -75,6 +80,7 @@ enum { BG_SHAPE_LINEAR = 1, BG_SHAPE_RADIAL, BG_SHAPE_ANGULAR, BG_SHAPE_DIAMOND,
 enum { BG_REPEAT_CLAMP = 1, BG_REPEAT_REPEAT, BG_REPEAT_MIRROR };
 enum { BG_INTERP_SRGB = 1, BG_INTERP_LINEAR, BG_INTERP_OKLAB, BG_INTERP_OKLCH_SHORT, BG_INTERP_OKLCH_LONG };
 enum { BG_BLEND_NORMAL = 1, BG_BLEND_MULTIPLY, BG_BLEND_SCREEN, BG_BLEND_ADD, BG_BLEND_OVERLAY };
+enum { BG_ALPHA_COMPOSITE = 1, BG_ALPHA_REPLACE = 2 };
 
 struct BG_Stop {
     PF_FpLong pos, opacity;     // 0~1
@@ -83,7 +89,7 @@ struct BG_Stop {
 
 struct BG_PreRenderData {
     PF_LRect  in_rect, out_rect;
-    A_long    shape, repeatMode, interp, blend, count;
+    A_long    shape, repeatMode, interp, blend, count, alphaMode;
     PF_FpLong sx, sy, ex, ey;   // 시작·끝 (레이어 좌표)
     PF_FpLong angleOff, contourSpan, cycles, phase, smooth, dither, amount;
     bool      reverse, preserveAlpha;
