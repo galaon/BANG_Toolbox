@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdint>
+#include <string>
 
 // ── 명령 처리 ────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ static bool          g_registered = false;
 static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output)
 {
     out_data->my_version = PF_VERSION(BANG_GRAD_MAJOR, BANG_GRAD_MINOR, BANG_GRAD_BUG, BANG_GRAD_STAGE, BANG_GRAD_BUILD);
-    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+    out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_SEND_UPDATE_PARAMS_UI | PF_OutFlag_CUSTOM_UI;
     out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER | PF_OutFlag2_FLOAT_COLOR_AWARE |
                            PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_PARAM_GROUP_START_COLLAPSED_FLAG;
     if (!g_registered && in_data->appl_id != kAppID_Premiere) {
@@ -42,6 +43,10 @@ static PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
 
 // 기본 8색 (보라 → 분홍 계열). 정지점 기본 위치는 균등 분할.
 //  기본 Stops 가 3 이므로 앞에서부터 세 색만으로도 그럴듯하게: 남은 다섯은 그 사이를 메운다.
+static const int kBarH = 44;          // 가로 색 띄 컨트롤 높이
+static const int kBarStrip = 20;      // 미리보기 띄 높이
+static const int kBarChip = 16;       // 정지점 칩 크기
+
 static const A_u_char kDefault[BG_NUM_STOPS][3] = {
     {  46,  26, 110 }, { 205,  90, 215 }, { 252, 200, 140 }, {  93,  48, 180 },
     { 150,  70, 220 }, { 240, 120, 180 }, { 250, 160, 150 }, { 255, 235, 160 },
@@ -64,6 +69,10 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_POINT("Start", 20, 20, 0, BG_START);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POINT("End", 80, 80, 0, BG_END);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON("Fit", "Fit to Layer", 0, PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY, BG_FIT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Fit Keeps Following", FALSE, PF_ParamFlag_CANNOT_TIME_VARY, BG_FIT_FOLLOW);
     AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_COLLAPSE_TWIRLY;
     PF_ADD_ANGLE("Angle Offset", 0, BG_ANGLE_OFF);
     FSLIDER("Contour Span (px)", 1, 5000, 1, 400, 120, PF_Precision_TENTHS, 0, BG_CONTOUR_SPAN);
@@ -81,6 +90,10 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_SLIDER("Stops", 2, BG_NUM_STOPS, 2, BG_NUM_STOPS, 3, BG_COUNT);
 
     TOPIC_OPEN("Color Stops " LINE, BG_G_STOPS);
+    AEFX_CLR_STRUCT(def);
+    def.flags = PF_ParamFlag_CANNOT_TIME_VARY; def.ui_flags = PF_PUI_CONTROL;
+    def.ui_width = 300; def.ui_height = kBarH;
+    PF_ADD_CHECKBOX("Stops Bar", "", FALSE, 0, BG_BAR);
     for (int i = 0; i < BG_NUM_STOPS; i++) {
         char nm[32];
         sprintf_s(nm, "Color %d", i + 1);
@@ -108,6 +121,13 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     #undef TOPIC_END
     #undef LINE
 
+    // 커스텀 UI(ECW 이벤트) 등록
+    PF_CustomUIInfo ci;
+    AEFX_CLR_STRUCT(ci);
+    ci.events = PF_CustomEFlag_EFFECT;
+    ci.comp_ui_alignment = ci.layer_ui_alignment = ci.preview_ui_alignment = PF_UIAlignment_NONE;
+    err = (*(in_data->inter.register_ui))(in_data->effect_ref, &ci);
+
     out_data->num_params = BG_NUM_PARAMS;
     return err;
 }
@@ -131,17 +151,104 @@ static PF_Err UpdateParamsUI(PF_InData* in_data, PF_OutData* out_data, PF_ParamD
     grey(BG_ANGLE_OFF,    PF_Param_ANGLE,        shape == BG_SHAPE_ANGULAR);
     grey(BG_CONTOUR_SPAN, PF_Param_FLOAT_SLIDER, shape == BG_SHAPE_CONTOUR);
     grey(BG_END,          PF_Param_POINT,        shape != BG_SHAPE_CONTOUR);
-    for (int i = 0; i < BG_NUM_STOPS; i++) {
-        const bool on = i < count;
-        grey(BG_S1_COLOR + i * 3, PF_Param_COLOR,        on);
-        grey(BG_S1_POS   + i * 3, PF_Param_FLOAT_SLIDER, on);
-        grey(BG_S1_OP    + i * 3, PF_Param_FLOAT_SLIDER, on);
+    // 안 쓰는 정지점은 회색이 아니라 아예 숨긴다 — 여덟 줄이 그대로 남아 있으면 보기 복잡하다.
+    //  (숨긴 스트림은 스크립트에서 setValue 가 안 된다 — 이 이펙트는 직접 건드리지 않으므로 괜찮다)
+    AEGP_EffectRefH meH = NULL;
+    if (!suites.PFInterfaceSuite1()->AEGP_GetNewEffectForEffect(g_plugin_id, in_data->effect_ref, &meH) && meH) {
+        for (int i = 0; i < BG_NUM_STOPS; i++) {
+            const A_Boolean hide = (i < count) ? FALSE : TRUE;
+            for (int k = 0; k < 3; k++) {
+                AEGP_StreamRefH sH = NULL;
+                if (!suites.StreamSuite2()->AEGP_GetNewEffectStreamByIndex(g_plugin_id, meH, BG_S1_COLOR + i * 3 + k, &sH) && sH) {
+                    suites.DynamicStreamSuite2()->AEGP_SetDynamicStreamFlag(sH, AEGP_DynStreamFlag_HIDDEN, FALSE, hide);
+                    suites.StreamSuite2()->AEGP_DisposeStream(sH);
+                }
+            }
+        }
+        suites.EffectSuite2()->AEGP_DisposeEffect(meH);
     }
     return err;
 }
 
+// Start·End 를 레이어 내용(sourceRectAtTime) 에 딱 맞춘다.
+//  · 방향은 지금 Start→End 방향을 그대로 쓴다.
+//    Linear·Contour 처럼 ‘가로지르는’ 모양은 내용의 최상단 가운데 → 최하단 가운데(세로일 때),
+//    가로면 좌·우 가운데. 사각형의 방향별 반지름 = (w/2)|ux| + (h/2)|uy|.
+//    Radial·Angular·Diamond·Reflected 처럼 기준점이 가운데인 모양은 Start = 중심, End = 꼭지점.
+//  · Start·End 는 **레이어 좌표**라 레이어 Transform 의 회전·크기는 값을 틀어지게 하지 않는다
+//    — 도형이 돌아가면 그라데이션도 같이 돌아간다. 바뀌는 건 ‘내용의 크기’ 뿐이라
+//    Keeps Following 을 켜면 표현식이 매 프레임 sourceRect 를 다시 재서 따라간다(방향은 고정).
+static PF_Err FitToLayer(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[])
+{
+    if (!g_registered) return PF_Err_NONE;
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+    AEGP_LayerH meL = NULL;
+    if (suites.PFInterfaceSuite1()->AEGP_GetEffectLayer(in_data->effect_ref, &meL) || !meL) return PF_Err_NONE;
+    AEGP_CompH compH = NULL; suites.LayerSuite9()->AEGP_GetLayerParentComp(meL, &compH);
+    AEGP_ItemH itemH = NULL; A_long compId = 0;
+    if (compH) { suites.CompSuite11()->AEGP_GetItemFromComp(compH, &itemH); if (itemH) suites.ItemSuite9()->AEGP_GetItemID(itemH, &compId); }
+    A_long layerIdx = 0; suites.LayerSuite9()->AEGP_GetLayerIndex(meL, &layerIdx);
+    // 셰이프·텍스트 레이어는 이펙트 버퍼가 컴 크기라 점 파라미터가 ‘컴 좌표’ 다.
+    //  sourceRectAtTime 은 레이어(소스) 좌표이므로 position-anchor 만큼 옳겨줘야 한다.
+    //  회전·크기는 이펙트 다음에 적용되므로 보정하지 않는다 — 도형과 함께 그대로 돌아간다.
+    AEGP_ObjectType meType = AEGP_ObjectType_AV;
+    suites.LayerSuite9()->AEGP_GetLayerObjectType(meL, &meType);
+    const bool vec = (meType == AEGP_ObjectType_VECTOR || meType == AEGP_ObjectType_TEXT);
+
+    const int shape = (int)params[BG_SHAPE]->u.pd.value;
+    const bool follow = params[BG_FIT_FOLLOW]->u.bd.value != 0;
+    // 현재 방향 (Start == End 면 세로로)
+    double ux = FIX_2_FLOAT(params[BG_END]->u.td.x_value) - FIX_2_FLOAT(params[BG_START]->u.td.x_value);
+    double uy = FIX_2_FLOAT(params[BG_END]->u.td.y_value) - FIX_2_FLOAT(params[BG_START]->u.td.y_value);
+    const double ul = std::sqrt(ux * ux + uy * uy);
+    if (ul < 1e-6) { ux = 0; uy = 1; } else { ux /= ul; uy /= ul; }
+
+    std::string js;
+    char buf[640];
+    js += "(function(){var comp=app.project.itemByID(" + std::to_string(compId) + ");if(!(comp&&comp instanceof CompItem))return 'nocomp';";
+    js += "var L=comp.layer(" + std::to_string(layerIdx + 1) + ");";
+    js += "var fx=null,par=L.property('ADBE Effect Parade');for(var e=1;e<=par.numProperties;e++)if(par.property(e).matchName==='BANG Gradient')fx=par.property(e);";
+    js += "if(!fx)return 'nofx';";
+    snprintf(buf, sizeof buf, "var shape=%d;var follow=%s;var ux=%.6f,uy=%.6f;var vec=%s;",
+             shape, follow ? "true" : "false", ux, uy, vec ? "true" : "false"); js += buf;
+    js += "app.beginUndoGroup('BANG Gradient Fit');try{";
+    js += "var S=fx.property('Start'),E=fx.property('End'),SP=fx.property('Contour Span (px)');";
+    js += "S.expression='';E.expression='';SP.expression='';";
+    // 표현식 공통 머리: 내용 상자 → 중심 c, 방향 반지름 h, 방향 쪽 꼭짓점 k
+    // 표현식 공통 머리: 내용 상자 → 중심 c, 방향 반지름 h, 방향 쪽 꼭지점 k (셰이프·텍스트는 o 만큼 이동)
+    js += "var pre='u=['+ux+','+uy+'];r=thisLayer.sourceRectAtTime(time,false);"
+          "o=" + std::string(vec ? "[thisLayer.transform.position[0]-thisLayer.transform.anchorPoint[0],"
+                                   "thisLayer.transform.position[1]-thisLayer.transform.anchorPoint[1]]" : "[0,0]") + ";"
+          "c=[r.left+r.width/2+o[0],r.top+r.height/2+o[1]];"
+          "h=(r.width/2)*Math.abs(u[0])+(r.height/2)*Math.abs(u[1]);"
+          "k=[c[0]+(u[0]<0?-1:1)*r.width/2,c[1]+(u[1]<0?-1:1)*r.height/2];';";
+    js += "if(follow){";
+    js +=   "if(shape===6){SP.expression='r=thisLayer.sourceRectAtTime(time,false);Math.min(r.width,r.height)/2';}";
+    js +=   "else if(shape===1){S.expression=pre+'[c[0]-u[0]*h,c[1]-u[1]*h]';E.expression=pre+'[c[0]+u[0]*h,c[1]+u[1]*h]';}";
+    js +=   "else{S.expression=pre+'c';E.expression=pre+'k';}";
+    js += "}else{";
+    js +=   "var r=L.sourceRectAtTime(comp.time,false);";
+    js +=   "var ox=0,oy=0;if(vec){var tg=L.property('ADBE Transform Group');"
+            "var ap=tg.property('ADBE Anchor Point').value,pp=tg.property('ADBE Position').value;"
+            "ox=pp[0]-ap[0];oy=pp[1]-ap[1];}";
+    js +=   "var cx=r.left+r.width/2+ox,cy=r.top+r.height/2+oy;";
+    js +=   "var h=(r.width/2)*Math.abs(ux)+(r.height/2)*Math.abs(uy);";
+    js +=   "var kx=cx+(ux<0?-1:1)*r.width/2,ky=cy+(uy<0?-1:1)*r.height/2;";
+    js +=   "if(shape===6){SP.setValue(Math.min(r.width,r.height)/2);}";
+    js +=   "else if(shape===1){S.setValue([cx-ux*h,cy-uy*h]);E.setValue([cx+ux*h,cy+uy*h]);}";
+    js +=   "else{S.setValue([cx,cy]);E.setValue([kx,ky]);}";
+    js += "}}finally{app.endUndoGroup();}return 'fit';})()";
+
+    AEGP_MemHandle resH = NULL, errH = NULL;
+    suites.UtilitySuite6()->AEGP_ExecuteScript(g_plugin_id, js.c_str(), FALSE, &resH, &errH);
+    if (resH) suites.MemorySuite1()->AEGP_FreeMemHandle(resH);
+    if (errH) suites.MemorySuite1()->AEGP_FreeMemHandle(errH);
+    return PF_Err_NONE;
+}
+
 static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], const PF_UserChangedParamExtra* extra)
 {
+    if (extra->param_index == BG_FIT) return FitToLayer(in_data, out_data, params);
     if (extra->param_index == BG_COUNT) {
         // 정지점 개수를 바꾸면 위치를 고르게 다시 뿌려준다 — 안 그러면 그라데이션이
         // 기본값 범위에서 잘려 보이고, 사용자가 매번 손으로 숫자를 넣어야 한다.
@@ -227,6 +334,157 @@ static RGB MixColor(A_long mode, const RGB& A, const RGB& B, float u)
     out.g = LinearToSrgb(std::min(1.f, std::max(0.f, lg)));
     out.b = LinearToSrgb(std::min(1.f, std::max(0.f, lb)));
     return out;
+}
+
+// ── 커스텀 UI: 가로 색 띄 ──────────────────
+//  ECW 는 파라미터를 한 줄에 하나씩밖에 못 놓는다. 그래서 정지점을 가로로 보여주려면
+//  Drawbot 으로 직접 그리는 수밖에 없다 — 위에 그라데이션 미리보기, 아래에 정지점 칩.
+//  칩을 누르면 AE 색 선택기가 뜨고, 고른 색이 그 정지점으로 들어간다.
+struct BarChip { float x, y, w, h; int stop; };
+
+static int BarChips(const PF_ParamDef* const* params, const PF_Rect& fr, BarChip* out, int maxN)
+{
+    const int count = std::min(BG_NUM_STOPS, std::max(2, (int)params[BG_COUNT]->u.sd.value));
+    const float x0 = (float)fr.left + 2.f, x1 = (float)fr.right - 2.f;
+    const float w = std::max(8.f, x1 - x0 - kBarChip);
+    int n = 0;
+    for (int i = 0; i < count && n < maxN; i++) {
+        const float pos = (float)(params[BG_S1_POS + i * 3]->u.fs_d.value / 100.0);
+        BarChip c;
+        c.w = c.h = (float)kBarChip;
+        c.x = x0 + std::min(1.f, std::max(0.f, pos)) * w;
+        c.y = (float)fr.top + kBarStrip + 4.f;
+        c.stop = i;
+        out[n++] = c;
+    }
+    return n;
+}
+
+// params[] 에서 바로 t 위치의 색을 뽑는다 (렌더와 같은 규칙, 불투명도는 무시)
+static RGB BarColorAt(const PF_ParamDef* const* params, float t)
+{
+    const int n = std::min(BG_NUM_STOPS, std::max(2, (int)params[BG_COUNT]->u.sd.value));
+    const A_long interp = params[BG_INTERP]->u.pd.value;
+    const float smooth = (float)(params[BG_SMOOTH]->u.fs_d.value / 100.0);
+    float pos[BG_NUM_STOPS]; RGB col[BG_NUM_STOPS];
+    int idx[BG_NUM_STOPS];
+    for (int i = 0; i < n; i++) {
+        pos[i] = (float)(params[BG_S1_POS + i * 3]->u.fs_d.value / 100.0);
+        const PF_Pixel& c = params[BG_S1_COLOR + i * 3]->u.cd.value;
+        col[i] = { c.red / 255.f, c.green / 255.f, c.blue / 255.f };
+        idx[i] = i;
+    }
+    for (int a = 0; a < n - 1; a++) for (int b = a + 1; b < n; b++)
+        if (pos[idx[b]] < pos[idx[a]]) { const int tmp = idx[a]; idx[a] = idx[b]; idx[b] = tmp; }
+    if (t <= pos[idx[0]]) return col[idx[0]];
+    if (t >= pos[idx[n - 1]]) return col[idx[n - 1]];
+    int k = 0;
+    while (k < n - 2 && t > pos[idx[k + 1]]) k++;
+    const float p0 = pos[idx[k]], p1 = pos[idx[k + 1]];
+    float u = (p1 - p0 > 1e-6f) ? (t - p0) / (p1 - p0) : 0.f;
+    if (smooth > 0.f) u = u + (u * u * (3.f - 2.f * u) - u) * smooth;
+    return MixColor(interp, col[idx[k]], col[idx[k + 1]], u);
+}
+
+static PF_Err BarDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_EventExtra* ev)
+{
+    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    if (ev->effect_win.area != PF_EA_CONTROL) return err;
+    DRAWBOT_Suites db;
+    ERR(AEFX_AcquireDrawbotSuites(in_data, out_data, &db));
+    if (err) return err;
+    DRAWBOT_DrawRef drawRef = NULL; DRAWBOT_SupplierRef sup = NULL; DRAWBOT_SurfaceRef surf = NULL;
+    PF_EffectCustomUISuite1* cui = NULL;
+    ERR(AEFX_AcquireSuite(in_data, out_data, kPFEffectCustomUISuite, kPFEffectCustomUISuiteVersion1, NULL, (void**)&cui));
+    if (!err && cui) { ERR(cui->PF_GetDrawingReference(ev->contextH, &drawRef)); AEFX_ReleaseSuite(in_data, out_data, kPFEffectCustomUISuite, kPFEffectCustomUISuiteVersion1, NULL); }
+    ERR(db.drawbot_suiteP->GetSupplier(drawRef, &sup));
+    ERR(db.drawbot_suiteP->GetSurface(drawRef, &surf));
+    if (!err) {
+        db.surface_suiteP->PushStateStack(surf);
+        const PF_Rect& fr = ev->effect_win.current_frame;
+        const float x0 = (float)fr.left + 2.f, x1 = (float)fr.right - 2.f;
+        const float stripY = (float)fr.top + 2.f, stripW = std::max(4.f, x1 - x0);
+        const bool rev = params[BG_REVERSE]->u.bd.value != 0;
+        // 1) 미리보기 띠 — 2px 씩 끊어 칠한다
+        for (float x = 0; x < stripW && !err; x += 2.f) {
+            float t = (stripW > 1.f) ? x / (stripW - 1.f) : 0.f;
+            if (rev) t = 1.f - t;
+            const RGB c = BarColorAt(params, t);
+            const DRAWBOT_ColorRGBA cc = { c.r, c.g, c.b, 1.f };
+            DRAWBOT_BrushRef br = NULL; ERR(db.supplier_suiteP->NewBrush(sup, &cc, &br));
+            DRAWBOT_PathRef path = NULL; ERR(db.supplier_suiteP->NewPath(sup, &path));
+            DRAWBOT_RectF32 rr = { x0 + x, stripY, 2.f, (float)kBarStrip - 2.f };
+            ERR(db.path_suiteP->AddRect(path, &rr));
+            ERR(db.surface_suiteP->FillPath(surf, br, path, kDRAWBOT_FillType_Default));
+            if (path) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)path));
+            if (br)   ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)br));
+        }
+        // 2) 정지점 칩
+        const DRAWBOT_ColorRGBA cEdge = { 0.10f, 0.10f, 0.10f, 1.f }, cRim = { 0.85f, 0.85f, 0.85f, 1.f };
+        DRAWBOT_PenRef pen = NULL, rim = NULL;
+        ERR(db.supplier_suiteP->NewPen(sup, &cEdge, 1.f, &pen));
+        ERR(db.supplier_suiteP->NewPen(sup, &cRim, 1.f, &rim));
+        BarChip chips[BG_NUM_STOPS];
+        const int n = BarChips(params, fr, chips, BG_NUM_STOPS);
+        for (int i = 0; i < n && !err; i++) {
+            const PF_Pixel& pc = params[BG_S1_COLOR + chips[i].stop * 3]->u.cd.value;
+            const DRAWBOT_ColorRGBA cc = { pc.red / 255.f, pc.green / 255.f, pc.blue / 255.f, 1.f };
+            DRAWBOT_BrushRef br = NULL; ERR(db.supplier_suiteP->NewBrush(sup, &cc, &br));
+            DRAWBOT_PathRef path = NULL; ERR(db.supplier_suiteP->NewPath(sup, &path));
+            DRAWBOT_RectF32 rr = { chips[i].x + 0.5f, chips[i].y + 0.5f, chips[i].w, chips[i].h };
+            ERR(db.path_suiteP->AddRect(path, &rr));
+            ERR(db.surface_suiteP->FillPath(surf, br, path, kDRAWBOT_FillType_Default));
+            ERR(db.surface_suiteP->StrokePath(surf, rim, path));
+            if (path) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)path));
+            if (br)   ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)br));
+        }
+        if (rim) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)rim));
+        if (pen) ERR2(db.supplier_suiteP->ReleaseObject((DRAWBOT_ObjectRef)pen));
+        db.surface_suiteP->PopStateStack(surf);
+    }
+    ERR2(AEFX_ReleaseDrawbotSuites(in_data, out_data));
+    if (!err) ev->evt_out_flags = PF_EO_HANDLED_EVENT;
+    return err;
+}
+
+static PF_Err BarClick(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_EventExtra* ev)
+{
+    PF_Err err = PF_Err_NONE;
+    if (ev->effect_win.area != PF_EA_CONTROL) return err;
+    const PF_Point pt = ev->u.do_click.screen_point;
+    BarChip chips[BG_NUM_STOPS];
+    const int n = BarChips(params, ev->effect_win.current_frame, chips, BG_NUM_STOPS);
+    for (int i = 0; i < n; i++) {
+        const BarChip& c = chips[i];
+        if (pt.h < c.x || pt.h >= c.x + c.w || pt.v < c.y || pt.v >= c.y + c.h) continue;
+        AEGP_SuiteHandler suites(in_data->pica_basicP);
+        const int idx = BG_S1_COLOR + c.stop * 3;
+        const PF_Pixel& cur = params[idx]->u.cd.value;
+        PF_PixelFloat in = { 1.f, cur.red / 255.f, cur.green / 255.f, cur.blue / 255.f }, outc = in;
+        char title[64]; snprintf(title, sizeof title, "Color %d", c.stop + 1);
+        if (!suites.AppSuite6()->PF_AppColorPickerDialog(title, &in, TRUE, &outc)) {
+            params[idx]->u.cd.value.red   = (A_u_char)(std::min(1.f, std::max(0.f, outc.red))   * 255.f + 0.5f);
+            params[idx]->u.cd.value.green = (A_u_char)(std::min(1.f, std::max(0.f, outc.green)) * 255.f + 0.5f);
+            params[idx]->u.cd.value.blue  = (A_u_char)(std::min(1.f, std::max(0.f, outc.blue))  * 255.f + 0.5f);
+            params[idx]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        }
+        PF_Rect inval(ev->effect_win.current_frame);
+        suites.AppSuite4()->PF_InvalidateRect(ev->contextH, &inval);
+        ev->evt_out_flags = PF_EO_HANDLED_EVENT | PF_EO_UPDATE_NOW;
+        break;
+    }
+    return err;
+}
+
+static PF_Err HandleEvent(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], PF_LayerDef* output, PF_EventExtra* ev)
+{
+    if (!ev || ev->effect_win.index != BG_BAR) return PF_Err_NONE;
+    switch (ev->e_type) {
+        case PF_Event_DRAW:     return BarDraw(in_data, out_data, params, ev);
+        case PF_Event_DO_CLICK: return BarClick(in_data, out_data, params, ev);
+        default: break;
+    }
+    return PF_Err_NONE;
 }
 
 // ── 거리 변환 (Contour 용, BANG Stroke 와 동일) ────────────────
@@ -354,6 +612,25 @@ static inline void BlendRGB(A_long mode, float br_, float bg_, float bb_, float&
     }
 }
 
+// 정지점 목록에서 t 위치의 색과 불투명도를 구한다
+static RGB StopColorAt(const BG_PreRenderData* d, float t, float& outAlpha)
+{
+    const BG_Stop* S = d->stops;
+    const int n = (int)d->count;
+    const float smooth = (float)d->smooth;
+    if (t <= S[0].pos)        { outAlpha = (float)S[0].opacity;     return { (float)S[0].r, (float)S[0].g, (float)S[0].b }; }
+    if (t >= S[n - 1].pos)    { outAlpha = (float)S[n - 1].opacity; return { (float)S[n - 1].r, (float)S[n - 1].g, (float)S[n - 1].b }; }
+    int k = 0;
+    while (k < n - 2 && t > S[k + 1].pos) k++;
+    const float p0 = (float)S[k].pos, p1 = (float)S[k + 1].pos;
+    float u = (p1 - p0 > 1e-6f) ? (t - p0) / (p1 - p0) : 0.f;
+    if (smooth > 0.f) u = u + (u * u * (3.f - 2.f * u) - u) * smooth;   // 선형 ↔ smoothstep
+    outAlpha = (float)(S[k].opacity + (S[k + 1].opacity - S[k].opacity) * u);
+    const RGB A = { (float)S[k].r, (float)S[k].g, (float)S[k].b };
+    const RGB B = { (float)S[k + 1].r, (float)S[k + 1].g, (float)S[k + 1].b };
+    return MixColor(d->interp, A, B, u);
+}
+
 template <typename P>
 static PF_Err RenderGradient(const BG_PreRenderData* d, const PF_EffectWorld* in, PF_EffectWorld* out)
 {
@@ -388,11 +665,60 @@ static PF_Err RenderGradient(const BG_PreRenderData* d, const PF_EffectWorld* in
     }
     const float span = (float)d->contourSpan;
 
+    // 모양 → t (반복·위상·방향까지 적용, 디더는 제외). 픽셀 안 어느 지점이든 불러 쓸 수 있게 람다로.
+    auto shapeT = [&](float px, float py, int ix, int iy) -> float {
+        float t;
+        switch (d->shape) {
+            case BG_SHAPE_RADIAL:  t = std::sqrt((px - sx) * (px - sx) + (py - sy) * (py - sy)) / len; break;
+            case BG_SHAPE_ANGULAR: {
+                float a = std::atan2(py - sy, px - sx) - std::atan2(dy, dx) - angOff;
+                const float TAU = 6.28318530718f;
+                a = a - std::floor(a / TAU) * TAU;
+                t = a / TAU;
+                break;
+            }
+            case BG_SHAPE_DIAMOND: {
+                const float u = ((px - sx) * dx + (py - sy) * dy) / len2;
+                const float v = ((px - sx) * -dy + (py - sy) * dx) / len2;
+                t = std::fabs(u) + std::fabs(v);
+                break;
+            }
+            case BG_SHAPE_REFLECT: t = std::fabs(((px - sx) * dx + (py - sy) * dy) * invLen2); break;
+            case BG_SHAPE_CONTOUR: {
+                const float dist = (!contour.empty() && ix >= 0 && ix < iw && iy >= 0 && iy < ih)
+                                 ? contour[(size_t)iy * iw + ix] : 0.f;
+                t = dist / span;
+                break;
+            }
+            default:               t = ((px - sx) * dx + (py - sy) * dy) * invLen2; break;   // Linear
+        }
+        t = t * cycles + phase;
+        switch (d->repeatMode) {
+            case BG_REPEAT_REPEAT: t = t - std::floor(t); break;
+            case BG_REPEAT_MIRROR: { const float f = std::fabs(t); const float m = std::fmod(f, 2.f); t = (m > 1.f) ? 2.f - m : m; break; }
+            default: t = std::min(1.f, std::max(0.f, t)); break;
+        }
+        return d->reverse ? 1.f - t : t;
+    };
+
+    // 반복·Angular 은 t 가 1→0 으로 뚝 끊기는 이음매가 생긴다. 그 줄은 한 픽셀 안에서 색이
+    // 통째로 바뀜어 계단처럼 보이므로, 이음매에 닿는 픽셀만 4×4 로 잘게 썼다.
+    // 이웃 t 를 매번 다시 구하면 비싸니 세 줄을 돌려 쓴다.
+    std::vector<float> tPrev(ow), tCur(ow), tNext(ow);
+    auto fillRow = [&](std::vector<float>& dst, int yy) {
+        const float pyy = (float)(d->out_rect.top + yy) + 0.5f;
+        for (int x = 0; x < ow; x++) dst[x] = shapeT((float)(d->out_rect.left + x) + 0.5f, pyy, x + offx, yy + offy);
+    };
+    fillRow(tCur, 0);
+    fillRow(tPrev, -1);
+    const float SEAM = 0.45f;
+
     for (int y = 0; y < oh; y++) {
         P* orow = (P*)((char*)out->data + (size_t)y * out->rowbytes);
         const int iy = y + offy;
         const P* irow = (in && iy >= 0 && iy < ih) ? (const P*)((const char*)in->data + (size_t)iy * in->rowbytes) : nullptr;
         const float py = (float)(d->out_rect.top + y) + 0.5f;
+        if (y + 1 < oh) fillRow(tNext, y + 1); else fillRow(tNext, y + 1);
         for (int x = 0; x < ow; x++) {
             const int ix = x + offx;
             float ba = 0, brr = 0, bgg = 0, bbb = 0;            // 원본 (straight)
@@ -402,62 +728,32 @@ static PF_Err RenderGradient(const BG_PreRenderData* d, const PF_EffectWorld* in
             }
             const float px = (float)(d->out_rect.left + x) + 0.5f;
 
-            // 1) 모양 → t
-            float t;
-            switch (d->shape) {
-                case BG_SHAPE_RADIAL:  t = std::sqrt((px - sx) * (px - sx) + (py - sy) * (py - sy)) / len; break;
-                case BG_SHAPE_ANGULAR: {
-                    float a = std::atan2(py - sy, px - sx) - std::atan2(dy, dx) - angOff;
-                    const float TAU = 6.28318530718f;
-                    a = a - std::floor(a / TAU) * TAU;
-                    t = a / TAU;
-                    break;
-                }
-                case BG_SHAPE_DIAMOND: {
-                    const float u = ((px - sx) * dx + (py - sy) * dy) / len2;
-                    const float v = ((px - sx) * -dy + (py - sy) * dx) / len2;
-                    t = std::fabs(u) + std::fabs(v);
-                    break;
-                }
-                case BG_SHAPE_REFLECT: t = std::fabs(((px - sx) * dx + (py - sy) * dy) * invLen2); break;
-                case BG_SHAPE_CONTOUR: {
-                    const int cx = ix, cy = iy;
-                    const float dist = (!contour.empty() && cx >= 0 && cx < iw && cy >= 0 && cy < ih)
-                                     ? contour[(size_t)cy * iw + cx] : 0.f;
-                    t = dist / span;
-                    break;
-                }
-                default:               t = ((px - sx) * dx + (py - sy) * dy) * invLen2; break;   // Linear
-            }
-
-            // 2) 반복·위상·방향
-            t = t * cycles + phase;
+            float t = tCur[x];
             if (dither > 0.f) t += (Hash01(x + (int)d->out_rect.left, y + (int)d->out_rect.top) - 0.5f) * dither * (1.f / 255.f);
-            switch (d->repeatMode) {
-                case BG_REPEAT_REPEAT: t = t - std::floor(t); break;
-                case BG_REPEAT_MIRROR: { float f = std::fabs(t); float m = std::fmod(f, 2.f); t = (m > 1.f) ? 2.f - m : m; break; }
-                default: t = std::min(1.f, std::max(0.f, t)); break;
-            }
-            if (d->reverse) t = 1.f - t;
 
-            // 3) 정지점 → 색·불투명도
-            const BG_Stop* S = d->stops;
-            const int n = (int)d->count;
+            // 이음매 검사: 옆·위·아래 t 와 0.45 넘게 벌어지면 한 픽셀 안에서 색이 뚝 끊긴다는 뜻
+            bool seam = false;
+            if (x > 0        && std::fabs(tCur[x] - tCur[x - 1]) > SEAM) seam = true;
+            if (x + 1 < ow   && std::fabs(tCur[x] - tCur[x + 1]) > SEAM) seam = true;
+            if (!seam        && std::fabs(tCur[x] - tPrev[x])    > SEAM) seam = true;
+            if (!seam        && std::fabs(tCur[x] - tNext[x])    > SEAM) seam = true;
+
             RGB col; float ga;
-            if (t <= S[0].pos) {
-                col = { (float)S[0].r, (float)S[0].g, (float)S[0].b }; ga = (float)S[0].opacity;
-            } else if (t >= S[n - 1].pos) {
-                col = { (float)S[n - 1].r, (float)S[n - 1].g, (float)S[n - 1].b }; ga = (float)S[n - 1].opacity;
+            if (seam) {
+                // 4×4 서브샘플을 premultiplied 로 평균 (알파가 다를 수 있으므로)
+                float ar = 0, ag2 = 0, ab = 0, aa = 0;
+                for (int sy2 = 0; sy2 < 4; sy2++) for (int sx2 = 0; sx2 < 4; sx2++) {
+                    const float ssx = px - 0.5f + (sx2 + 0.5f) * 0.25f;
+                    const float ssy = py - 0.5f + (sy2 + 0.5f) * 0.25f;
+                    float a2; const RGB c2 = StopColorAt(d, shapeT(ssx, ssy, ix, iy), a2);
+                    ar += c2.r * a2; ag2 += c2.g * a2; ab += c2.b * a2; aa += a2;
+                }
+                const float inv16 = 1.f / 16.f;
+                aa *= inv16;
+                col = (aa > 1e-6f) ? RGB{ ar * inv16 / aa, ag2 * inv16 / aa, ab * inv16 / aa } : RGB{ 0, 0, 0 };
+                ga = aa;
             } else {
-                int k = 0;
-                while (k < n - 2 && t > S[k + 1].pos) k++;
-                const float p0 = (float)S[k].pos, p1 = (float)S[k + 1].pos;
-                float u = (p1 - p0 > 1e-6f) ? (t - p0) / (p1 - p0) : 0.f;
-                if (smooth > 0.f) u = u + (u * u * (3.f - 2.f * u) - u) * smooth;   // 선형 ↔ smoothstep
-                const RGB A = { (float)S[k].r, (float)S[k].g, (float)S[k].b };
-                const RGB B = { (float)S[k + 1].r, (float)S[k + 1].g, (float)S[k + 1].b };
-                col = MixColor(d->interp, A, B, u);
-                ga = (float)(S[k].opacity + (S[k + 1].opacity - S[k].opacity) * u);
+                col = StopColorAt(d, t, ga);
             }
             ga *= amount;
             if (d->preserveAlpha) ga *= ba;
@@ -473,6 +769,8 @@ static PF_Err RenderGradient(const BG_PreRenderData* d, const PF_EffectWorld* in
             const float inv = (oa > 1e-6f) ? 1.f / oa : 0.f;
             o.alpha = Chan<P>::put(oa); o.red = Chan<P>::put(orr * inv); o.green = Chan<P>::put(og * inv); o.blue = Chan<P>::put(ob * inv);
         }
+        tPrev.swap(tCur);
+        tCur.swap(tNext);
     }
     return PF_Err_NONE;
 }
@@ -528,6 +826,7 @@ PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutData* out_data, PF_Param
             case PF_Cmd_PARAMS_SETUP:       err = ParamsSetup(in_data, out_data, params, output); break;
             case PF_Cmd_UPDATE_PARAMS_UI:   err = UpdateParamsUI(in_data, out_data, params); break;
             case PF_Cmd_USER_CHANGED_PARAM: err = UserChangedParam(in_data, out_data, params, (const PF_UserChangedParamExtra*)extra); break;
+            case PF_Cmd_EVENT:              err = HandleEvent(in_data, out_data, params, output, (PF_EventExtra*)extra); break;
             case PF_Cmd_SMART_PRE_RENDER:   err = PreRender(in_data, out_data, (PF_PreRenderExtra*)extra); break;
             case PF_Cmd_SMART_RENDER:       err = SmartRender(in_data, out_data, (PF_SmartRenderExtra*)extra); break;
             default: break;

@@ -59,6 +59,9 @@ native/
   **Contour** 는 알파 경계까지의 거리(Felzenszwalb EDT, BANG Stroke 와 같은 코드)를 `Contour Span` 으로 나눠 t 로 쓴다.
 - 보간: sRGB 그대로 / 선형 RGB / OKLab / OKLCh(극좌표, 짧은·긴 색상 경로). OKLab 변환은 Björn Ottosson 계수.
 - Dither 는 t 에 ±0.5LSB 크기의 해시 잡음을 더해 8bpc 띄를 지운다.
+- 이음매 AA: Repeat·Angular 은 t 가 1→0 으로 끊긴다. 옆·위·아래 픽셀의 t 와 0.45 넘게 벌어지는 픽셀만 4×4 서브샘플. t 를 픽셀마다 다시 구하면 비싸서 세 줄(이전·현재·다음)을 돌려 쓴다.
+- `Fit to Layer`: 버튼(SUPERVISE) → `AEGP_ExecuteScript` 로 sourceRectAtTime 을 재 값이나 표현식을 넣는다. 방향은 누를 때의 Start→End 를 상수로 박아 쓴다. ⚠ **셰이프·텍스트 레이어는 점 파라미터가 컴 좌표**이다(버퍼가 컴 크기). sourceRectAtTime 은 소스 좌표라 `position - anchorPoint` 만큼 옳겨야 맞는다 (실측으로 확인: 회전·스케일은 이펙트 뒤에 적용돼 보정 불필요, 그러나 Position 은 버퍼 좌표에 그대로 반영된다). 솔리드·푸테지는 보정 없음.
+- Stops Bar: `PF_PUI_CONTROL` 체크박스 + Drawbot. 칩 클릭 → `PF_AppColorPickerDialog` → `uu.change_flags = PF_ChangeFlag_CHANGED_VALUE`. 커스텀 UI 를 쓰려면 `PF_OutFlag_CUSTOM_UI` 를 GlobalSetup 과 PiPL 에 둘 다 넣어야 한다(안 넣으면 "no custom ui outflag" 오류).
 - 버퍼 확장이 없으므로 `I_EXPAND_BUFFER` 없이 PiPL OutFlags = DEEP_COLOR_AWARE | SEND_UPDATE_PARAMS_UI (0x06000000).
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)

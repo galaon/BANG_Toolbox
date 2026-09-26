@@ -3,6 +3,19 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.4.1] — 2026-09-26
+
+### Added (BANG Gradient)
+- **`Fit to Layer` 버튼 + `Fit Keeps Following` 체크박스** — Start·End 를 레이어 내용 크기에 딱 맞춥니다.
+  - 방향은 지금 Start→End 방향을 그대로 쓰므로, 세로 그라데이션이면 **최상단 가운데 → 최하단 가운데**, 가로면 좌·우 가운데로 붙습니다.
+  - 기준점이 가운데인 모양(Radial·Angular·Diamond·Reflected)은 **Start = 중심, End = 꼭지점**. Contour 는 짧은 변의 절반을 Span 으로.
+  - 체크박스를 켜고 누르면 값 대신 **표현식**을 걸어, 내용 크기나 위치가 바뀜어도 알아서 따라갑니다. 회전·스케일은 이펙트 다음에 적용되므로 그라데이션이 도형과 함께 그대로 돌아갑니다.
+- **가로 색 띄(Stops Bar)** — Color Stops 맨 위에 그라데이션 미리보기와 정지점 칩을 **가로로** 다시 그렸습니다. 칩을 클릭하면 그 정지점의 색 선택기가 바로 뜨고, 위치도 실제 비율대로 놓입니다.
+
+### Changed / Fixed (BANG Gradient)
+- **Angular·Repeat 의 계단 현상** — t 가 1→0 으로 뚝 끊기는 이음매는 한 픽셀 안에서 색이 통째로 바뀝니다. 이제 그 줄에 닿는 픽셀만 골라 **4×4 서브샘플**로 썽니다(비용은 이음매 줄에만).
+- **안 쓰는 정지점은 숨김** — `Stops` 개수보다 뒤에 있는 색·위치·불투명도 줄은 회색이 아니라 목록에서 아예 사라집니다.
+
 ## [1.4.0] — 2026-09-26
 
 ### Added — 새 네이티브 이펙트 **BANG Gradient**

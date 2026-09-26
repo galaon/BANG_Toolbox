@@ -22,10 +22,10 @@ resource 'PiPL' (16000) {
 #endif
 		AE_PiPL_Version { 2, 0 },
 		AE_Effect_Spec_Version { PF_PLUG_IN_VERSION, PF_PLUG_IN_SUBVERS },
-		AE_Effect_Version { 524289 /* 1.0.0 build 1 */ },
+		AE_Effect_Version { 557057 /* 1.1.0 build 1 */ },
 		AE_Effect_Info_Flags { 0 },
-		/* PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_SEND_UPDATE_PARAMS_UI */
-		AE_Effect_Global_OutFlags { 0x06000000 },
+		/* PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_SEND_UPDATE_PARAMS_UI | PF_OutFlag_CUSTOM_UI */
+		AE_Effect_Global_OutFlags { 0x06008000 },
 		/* PF_OutFlag2_SUPPORTS_SMART_RENDER | FLOAT_COLOR_AWARE | SUPPORTS_THREADED_RENDERING | PARAM_GROUP_START_COLLAPSED_FLAG */
 		AE_Effect_Global_OutFlags_2 { 0x08001408 },
 		AE_Effect_Match_Name { "BANG Gradient" },

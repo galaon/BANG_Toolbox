@@ -15,6 +15,7 @@
 #include "AE_Effect.h"
 #include "AE_EffectCB.h"
 #include "AE_EffectCBSuites.h"
+#include "AE_EffectUI.h"
 #include "AE_Macros.h"
 #include "Param_Utils.h"
 #include "AEGP_SuiteHandler.h"
@@ -22,7 +23,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_GRAD_MAJOR   1
-#define BANG_GRAD_MINOR   0
+#define BANG_GRAD_MINOR   1
 #define BANG_GRAD_BUG     0
 #define BANG_GRAD_STAGE   PF_Stage_DEVELOP
 #define BANG_GRAD_BUILD   1
@@ -35,6 +36,8 @@ enum {
     BG_SHAPE,           // Shape: Linear | Radial | Angular | Diamond | Reflected | Contour
     BG_START,           // Start (점)
     BG_END,             // End (점)
+    BG_FIT,             // Fit to Layer (버튼) — Start·End 를 레이어 내용 크기에 맞춤
+    BG_FIT_FOLLOW,      // Fit Keeps Following — 값 대신 표현식을 걸어 크기 변화를 추종
     BG_ANGLE_OFF,       // Angle Offset (Angular)
     BG_CONTOUR_SPAN,    // Contour Span (px)
     BG_REPEAT,          // Repeat: Clamp | Repeat | Mirror
@@ -47,6 +50,7 @@ enum {
     BG_COUNT,           // Stops (2~8)
 
     BG_G_STOPS,         // ── Color Stops ──
+    BG_BAR,             //   가로 색 띄 (커스텀 UI) — 미리보기 + 정지점 색 클릭
     BG_S1_COLOR, BG_S1_POS, BG_S1_OP,
     BG_S2_COLOR, BG_S2_POS, BG_S2_OP,
     BG_S3_COLOR, BG_S3_POS, BG_S3_OP,
