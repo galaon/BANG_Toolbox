@@ -121,6 +121,12 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Order", 2, BS_ORDER_BEHIND, "Stroke Behind|Stroke In Front", BS_ORDER);
     TOPIC_END(BS_G_BODY_END);
+
+    TOPIC_CLOSED("Fill Gaps " LINE, BS_G_FILL);
+    AEFX_CLR_STRUCT(def); def.flags = PF_ParamFlag_SUPERVISE;
+    PF_ADD_POPUP("Fill Gaps", 3, BS_GAP_OFF, "Off|Narrow Gaps|All Counters", BS_FILLGAP);
+    FSLIDER("Gap Size", 0, 2000, 0, 200, 24, PF_Precision_TENTHS, 0, BS_FILLGAP_SIZE);
+    TOPIC_END(BS_G_FILL_END);
     #undef FSLIDER
     #undef TOPIC_CLOSED
     #undef TOPIC_END
@@ -144,12 +150,18 @@ static PF_Err UpdateParamsUI(PF_InData* in_data, PF_OutData* out_data, PF_ParamD
     if (grad) { g.ui_flags &= ~PF_PUI_DISABLED; g.flags &= ~PF_ParamFlag_COLLAPSE_TWIRLY; }
     else      { g.ui_flags |=  PF_PUI_DISABLED; g.flags |=  PF_ParamFlag_COLLAPSE_TWIRLY; }
     ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, BS_G_GRAD, &g));
+
+    // Gap Size 는 'Narrow Gaps' 일 때만 의미가 있다
+    PF_ParamDef gs = *params[BS_FILLGAP_SIZE];
+    if (params[BS_FILLGAP]->u.pd.value == BS_GAP_NARROW) gs.ui_flags &= ~PF_PUI_DISABLED;
+    else                                                 gs.ui_flags |=  PF_PUI_DISABLED;
+    ERR2(suites.ParamUtilsSuite3()->PF_UpdateParamUI(in_data->effect_ref, BS_FILLGAP_SIZE, &gs));
     return err;
 }
 
 static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[], const PF_UserChangedParamExtra* extra)
 {
-    if (extra->param_index == BS_FILL) {
+    if (extra->param_index == BS_FILL || extra->param_index == BS_FILLGAP) {
         PF_Err err = UpdateParamsUI(in_data, out_data, params);
         out_data->out_flags |= PF_OutFlag_REFRESH_UI;
         return err;
@@ -201,6 +213,8 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     CHK(BS_BODY);          d->body        = pd.u.pd.value;
     CHK(BS_BODY_OPACITY);  d->bodyOpacity = pd.u.fs_d.value / 100.0;
     CHK(BS_ORDER);         d->order       = pd.u.pd.value;
+    CHK(BS_FILLGAP);       d->gapMode     = pd.u.pd.value;
+    CHK(BS_FILLGAP_SIZE);  d->gapSize     = pd.u.fs_d.value * ds;
     #undef CHK
     if (err) { delete d; return err; }
 
@@ -217,6 +231,9 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
         else                                   ctr = d->offset + half;
         d->bandLo = ctr - half - d->softness - d->noiseAmount;
         d->bandHi = ctr + half + d->softness + d->noiseAmount;
+        // 구멍 크기를 재려면 획이 닿는 곳보다 멀리까지 바깥 거리장이 필요하다
+        //  (Inside 획은 bandHi 가 0 이하라 바깥 EDT 자체를 건너뛰어 버린다)
+        if (d->gapMode != BS_GAP_OFF) d->bandHi = std::max(d->bandHi, 2.0);
     }
 
     // 마이터는 모서리가 한계 배까지 뻗는다 — 다만 두꺼운 획에서 격자가 폭발하지 않게 +1000px 로 상한
@@ -582,6 +599,7 @@ struct StrokeCtx {
     int gx0, gy0, gw, gh;               // 격자 원점(레이어 좌표)과 크기
     std::vector<float> sdf;             // 부호 있는 거리 (+ 바깥, − 안쪽), 격자 크기
     std::vector<float> alpha;           // 격자 크기의 알파
+    std::vector<unsigned char> gap;     // 획으로 메울 '남은 구멍' (Fill Gaps)
 };
 
 template <typename P>
@@ -672,6 +690,71 @@ static void BuildSDF(StrokeCtx& c)
     }
 }
 
+// ── 안쪽에 애매하게 남는 구멍을 획으로 채우기 ────────────
+//  글자 속 카운터(A 의 삼각형, g 의 고리)를 두꺼운 획이 거의 메웠는데 가운데만 조금 남는 자리가
+//  지저분하게 보인다. 그 자리를 찾아서 획 색으로 덮는다.
+//   ① 구멍 후보 = 알파 밖(배경) + 획 바깥 끝보다 먼 픽셀.
+//   ② 4방향 연결성분으로 묶고, 격자 테두리에 닿는 성분(= 바깥 배경)은 버린다 → 남은 건 다 카운터.
+//   ③ 성분의 안쪽 반지름 = max(sdf) − 획 바깥 끝. 이게 기준보다 작으면 '애매하게 남은' 것.
+//      All Counters 면 크기를 보지 않고 전부 채운다.
+//   ④ 획과 맞닿는 반투명 1px 띄까지 덮도록 배경 쪽으로만 몇 픽셀 넓힌다(본체는 건드리지 않는다).
+static void BuildGapMask(StrokeCtx& c)
+{
+    const int w = c.gw, h = c.gh;
+    const size_t N = (size_t)w * h;
+    c.gap.assign(N, 0);
+
+    const float half = (float)(c.d->width * 0.5);
+    float center;
+    if (c.d->position == BS_POS_INSIDE)      center = -(float)c.d->offset - half;
+    else if (c.d->position == BS_POS_CENTER) center = (float)c.d->offset;
+    else                                     center = (float)c.d->offset + half;
+    const float outerEdge = center + half;
+
+    std::vector<int> label(N, -1);      // -1 = 구멍 아님, -2 = 아직 안 묶임, >= 0 = 성분 번호
+    for (size_t i = 0; i < N; i++) if (c.alpha[i] < 0.5f && c.sdf[i] > outerEdge + 0.5f) label[i] = -2;
+
+    std::vector<size_t> stack, cells;
+    int nc = 0;
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+        const size_t s0 = (size_t)y * w + x;
+        if (label[s0] != -2) continue;
+        const int id = nc++;
+        float maxd = -1e30f; bool open = false;
+        cells.clear(); label[s0] = id; stack.push_back(s0);
+        while (!stack.empty()) {
+            const size_t p = stack.back(); stack.pop_back();
+            cells.push_back(p);
+            if (c.sdf[p] > maxd) maxd = c.sdf[p];
+            const int px = (int)(p % (size_t)w), py = (int)(p / (size_t)w);
+            if (px == 0 || py == 0 || px == w - 1 || py == h - 1) open = true;
+            if (px > 0     && label[p - 1] == -2) { label[p - 1] = id; stack.push_back(p - 1); }
+            if (px < w - 1 && label[p + 1] == -2) { label[p + 1] = id; stack.push_back(p + 1); }
+            if (py > 0     && label[p - w] == -2) { label[p - w] = id; stack.push_back(p - w); }
+            if (py < h - 1 && label[p + w] == -2) { label[p + w] = id; stack.push_back(p + w); }
+        }
+        if (open) continue;
+        if (c.d->gapMode != BS_GAP_ALL && (maxd - outerEdge) * 2.f > (float)c.d->gapSize) continue;
+        for (size_t p : cells) c.gap[p] = 1;
+    }
+
+    // 획 쪽으로만 몇 픽셀 넓혀 반투명 이음매를 덮는다 (넓힌 자리는 어차피 획이라 보이는 변화가 없다)
+    const int grow = std::min(8, 2 + (int)std::ceil(c.d->softness));
+    std::vector<size_t> cur, nxt;
+    for (size_t i = 0; i < N; i++) if (c.gap[i]) cur.push_back(i);
+    for (int it = 0; it < grow && !cur.empty(); it++) {
+        nxt.clear();
+        for (size_t p : cur) {
+            const int px = (int)(p % (size_t)w), py = (int)(p / (size_t)w);
+            if (px > 0     && !c.gap[p - 1] && c.alpha[p - 1] < 0.5f) { c.gap[p - 1] = 1; nxt.push_back(p - 1); }
+            if (px < w - 1 && !c.gap[p + 1] && c.alpha[p + 1] < 0.5f) { c.gap[p + 1] = 1; nxt.push_back(p + 1); }
+            if (py > 0     && !c.gap[p - w] && c.alpha[p - w] < 0.5f) { c.gap[p - w] = 1; nxt.push_back(p - w); }
+            if (py < h - 1 && !c.gap[p + w] && c.alpha[p + w] < 0.5f) { c.gap[p + w] = 1; nxt.push_back(p + w); }
+        }
+        cur.swap(nxt);
+    }
+}
+
 static inline void BlendRGB(A_long mode, float br_, float bg_, float bb_, float& r, float& g, float& b)
 {
     switch (mode) {
@@ -714,6 +797,7 @@ static PF_Err RenderStroke(StrokeCtx& c)
     const float noiseAmt = (float)d->noiseAmount, noiseScale = (float)d->noiseScale, noiseEvo = (float)d->noiseEvo;
     const int noiseOct = std::min(std::max((int)d->noiseDetail, 1), 5);
     const uint32_t noiseSeed = (uint32_t)d->noiseSeed;
+    const bool gapOn = (d->gapMode != BS_GAP_OFF) && !c.gap.empty();
 
     for (int y = 0; y < oh; y++) {
         P* orow = (P*)((char*)c.out->data + y * c.out->rowbytes);
@@ -737,6 +821,7 @@ static PF_Err RenderStroke(StrokeCtx& c)
             float t = half - std::fabs(dist - center);
             float cov = (t + 0.5f + soft * 0.5f) / (1.0f + soft);
             cov = std::min(std::max(cov, 0.f), 1.f);
+            if (gapOn && c.gap[(size_t)(y + goy) * c.gw + gox + x]) cov = 1.f;   // 남은 구멍 메우기
             float sa = cov * op;
 
             float sr = ar, sg = ag, sb = ab;
@@ -798,9 +883,15 @@ static PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRend
     LOGF("  fmt=%d", (int)fmt);
 
     switch (fmt) {
-        case PF_PixelFormat_ARGB128: BuildSDF<PF_PixelFloat>(c); err = RenderStroke<PF_PixelFloat>(c); break;
-        case PF_PixelFormat_ARGB64:  BuildSDF<PF_Pixel16>(c);    err = RenderStroke<PF_Pixel16>(c);    break;
-        default:                     BuildSDF<PF_Pixel>(c);      err = RenderStroke<PF_Pixel>(c);      break;
+        case PF_PixelFormat_ARGB128: BuildSDF<PF_PixelFloat>(c); break;
+        case PF_PixelFormat_ARGB64:  BuildSDF<PF_Pixel16>(c);    break;
+        default:                     BuildSDF<PF_Pixel>(c);      break;
+    }
+    if (d->gapMode != BS_GAP_OFF) BuildGapMask(c);
+    switch (fmt) {
+        case PF_PixelFormat_ARGB128: err = RenderStroke<PF_PixelFloat>(c); break;
+        case PF_PixelFormat_ARGB64:  err = RenderStroke<PF_Pixel16>(c);    break;
+        default:                     err = RenderStroke<PF_Pixel>(c);      break;
     }
     return err;
 }

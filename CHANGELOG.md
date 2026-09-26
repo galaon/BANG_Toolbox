@@ -3,6 +3,25 @@
 모든 릴리스는 [GitHub Releases](https://github.com/galaon/BANG_Toolbox/releases) 에서 내려받을 수 있습니다.
 최신 버전 바로 받기: **[BANG_Toolbox.zip](https://github.com/galaon/BANG_Toolbox/releases/latest/download/BANG_Toolbox.zip)**
 
+## [1.6.0] — 2026-09-26
+
+### Added (BANG Stroke)
+- **`Fill Gaps`** — 획이 글자 속 카운터(A 의 삼각형, g 의 고리)를 거의 메웠는데 가운데만 애매하게 남는 자리를 획 색으로 채웁니다.
+  - `Off` / **`Narrow Gaps`**(`Gap Size` — 기본 24px — 보다 좁은 구멍만) / **`All Counters`**(큰 카운터까지 전부).
+  - 글자 바깥의 배경은 건드리지 않고 닫힌 구멍만 골라 채웁니다.
+  - 기존 `BANG Stroke` 인스턴스는 **그대로 씁니다** (파라미터를 맨 뒤에만 붙였습니다).
+
+### Changed (BANG Gradient)
+- **`Randomize` 가 ‘똑색’ 을 피합니다.**
+  - 예전에는 OKLCh 값을 sRGB 로 바꿀 때 범위를 넘으면 **채널을 그냥 잘라냈고**, 그러면 색상이 틀어지고 채도가 빠져 탁해졌습니다.
+    이제는 그 밝기에서 sRGB 안에 들어오는 최대 채도를 먼저 구해 그것의 58~100% 로만 고릅니다(gamut-relative saturation).
+  - **어두운 주황·노랑이 곷 갈색·올리브** 이므로, OKLCh 색상 88° 주변 띄에서만 밝기 바닥을 최대 0.86 까지 올렸습니다.
+    짙은 남색·버건디·포레스트그린은 그대로 나옵니다. (실측: 청동색 `172,126,40` → 호박색 `249,194,98`)
+  - 색상 배치도 유사색·**넓은 스윙**·보색·분할보색·삼색·단색조 여섯 가지에서 고르므로 색상폭은 오히려 넓어졌습니다.
+- **정지점이 `Stop 1`…`Stop 8` 접힐 그룹으로 묶였습니다.** Color·Position·Opacity 가 줄 하나로 줄어들어,
+  `Randomize` 로 정지점 갯수가 바뀔 때 이펙트 컨트롤 창이 크게 밀리지 않습니다(최대 24줄 → 8줄).
+- ⚠ 파라미터 순서가 바뀌었습니다 — 이전 버전으로 만든 `BANG Gradient` 인스턴스는 **다시 적용**해야 합니다.
+
 ## [1.5.1] — 2026-09-26
 
 ### Changed (BANG Gradient)

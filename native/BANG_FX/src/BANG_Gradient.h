@@ -23,7 +23,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_GRAD_MAJOR   1
-#define BANG_GRAD_MINOR   4
+#define BANG_GRAD_MINOR   5
 #define BANG_GRAD_BUG     0
 #define BANG_GRAD_STAGE   PF_Stage_DEVELOP
 #define BANG_GRAD_BUILD   1
@@ -56,14 +56,15 @@ enum {
     BG_RANDOM,          //   Randomize (OKLCh 색상환에서 골라 그럴듯한 조합을 만든다)
     BG_IMPORT,          //   Import… (.css / .ggr / .json)
     BG_EXPORT,          //   Export… (.css / .ggr / .json)
-    BG_S1_COLOR, BG_S1_POS, BG_S1_OP,
-    BG_S2_COLOR, BG_S2_POS, BG_S2_OP,
-    BG_S3_COLOR, BG_S3_POS, BG_S3_OP,
-    BG_S4_COLOR, BG_S4_POS, BG_S4_OP,
-    BG_S5_COLOR, BG_S5_POS, BG_S5_OP,
-    BG_S6_COLOR, BG_S6_POS, BG_S6_OP,
-    BG_S7_COLOR, BG_S7_POS, BG_S7_OP,
-    BG_S8_COLOR, BG_S8_POS, BG_S8_OP,
+    //   정지점은 하나씩 접히는 그룹이다 — 열려 있으면 24줄이라 Stops 변화마다 아래 버튼이 크게 밀린다
+    BG_S1_GRP, BG_S1_COLOR, BG_S1_POS, BG_S1_OP, BG_S1_GRP_END,
+    BG_S2_GRP, BG_S2_COLOR, BG_S2_POS, BG_S2_OP, BG_S2_GRP_END,
+    BG_S3_GRP, BG_S3_COLOR, BG_S3_POS, BG_S3_OP, BG_S3_GRP_END,
+    BG_S4_GRP, BG_S4_COLOR, BG_S4_POS, BG_S4_OP, BG_S4_GRP_END,
+    BG_S5_GRP, BG_S5_COLOR, BG_S5_POS, BG_S5_OP, BG_S5_GRP_END,
+    BG_S6_GRP, BG_S6_COLOR, BG_S6_POS, BG_S6_OP, BG_S6_GRP_END,
+    BG_S7_GRP, BG_S7_COLOR, BG_S7_POS, BG_S7_OP, BG_S7_GRP_END,
+    BG_S8_GRP, BG_S8_COLOR, BG_S8_POS, BG_S8_OP, BG_S8_GRP_END,
     BG_G_STOPS_END,
 
     BG_G_OUT,           // ── Output ──
@@ -76,6 +77,14 @@ enum {
 
     BG_NUM_PARAMS
 };
+
+// i 번째 정지점의 파라미터 인덱스 (0-based)
+#define BG_STOP_STRIDE  (BG_S2_GRP - BG_S1_GRP)
+#define BG_SG(i)   (BG_S1_GRP     + (i) * BG_STOP_STRIDE)
+#define BG_SC(i)   (BG_S1_COLOR   + (i) * BG_STOP_STRIDE)
+#define BG_SP(i)   (BG_S1_POS     + (i) * BG_STOP_STRIDE)
+#define BG_SO(i)   (BG_S1_OP      + (i) * BG_STOP_STRIDE)
+#define BG_SGE(i)  (BG_S1_GRP_END + (i) * BG_STOP_STRIDE)
 
 enum { BG_SHAPE_LINEAR = 1, BG_SHAPE_RADIAL, BG_SHAPE_ANGULAR, BG_SHAPE_DIAMOND, BG_SHAPE_REFLECT, BG_SHAPE_CONTOUR };
 enum { BG_REPEAT_CLAMP = 1, BG_REPEAT_REPEAT, BG_REPEAT_MIRROR };

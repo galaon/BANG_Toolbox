@@ -63,9 +63,17 @@ native/
 - `Fit Horizontal`·`Fit Vertical`·`Fit Diagonal`: 버튼(SUPERVISE) → `AEGP_ExecuteScript` 로 sourceRectAtTime 을 재 값이나 표현식을 넣는다. 방향은 **지금 Start→End 를 보고 결정**한다 — 가로는 좌↔우, 세로는 상↔하로 뒤집고, 대각선은 현재 각이 대각선 위면 다음 사분면(45°→135°→225°→315°, 화면 좌표라 각이 커지는 쪽이 시계방향), 아니면 45° 부터. ⚠ **셰이프·텍스트 레이어는 점 파라미터가 컴 좌표**이다(버퍼가 컴 크기). sourceRectAtTime 은 소스 좌표라 `position - anchorPoint` 만큼 옳겨야 맞는다 (실측으로 확인: 회전·스케일은 이펙트 뒤에 적용돼 보정 불필요, 그러나 Position 은 버퍼 좌표에 그대로 반영된다). 솔리드·푸테지는 보정 없음.
 - 교환 포맷: `.css`(colorffy·coolors 식 `linear-gradient(<ang>deg[ in oklab], rgba() p%, …)`, 각도·보간 색공간 왕복) · `.ggr`(GIMP, 문서화된 텍스트) · `.json`(자체). Photoshop `.grd` 는 비공개 바이너리(직렬화된 액션 디스크립터)라 제외.
 - ⚠ **숨긴 스트림은 스크립트 setValue 가 안 된다** — 정지점 줄을 DynamicStream 으로 숨기므로, 파일 임포트 전에 `ApplyStopVisibility(in_data, BG_NUM_STOPS)` 로 전부 펼쳐둔다. 안 그러면 세 번째 이후 정지점이 조용히 빠진다(실제로 겪음). 반면 `params[]` + `change_flags` 는 숨김 여부와 무관하게 쓴다.
+- `Randomize`: 감마(gamut) 경계를 직접 찾아 쓴다. `BG_MaxChroma(L,h)` = 그 밝기·색상에서 sRGB 안에 들어오는 최대 채도(이분탐색 18회), `BG_CuspL(h)` = 그 색상이 가장 진해지는 밝기. 채널을 잘라내면(예전 방식) 색상이 틀어지고 채도가 빠져 탁해진다 — 그래서 처음부터 만들 수 있는 범위 안에서만 고른다. ‘똑색’ 은 결국 **어두운 주황~노랑**이므로 OKLCh h≈88° ±85° 띄에서만 밝기 바닥을 `0.30 + 0.56·k` 로 올린다(k = 코사인 창). 다른 색상은 `cuspL − 0.34` 만 바닥이라 짙은 남색·버건디가 그대로 나온다. (Wijffelaars cusp 삼각형 + gamut-relative saturation — meodai/cusphanger 와 같은 접근)
+- 정지점은 `Stop N` 그룹(`START_COLLAPSED`) 으로 묶어 ECW 높이를 줄였다. ⚠ **함정 두 개**: ① AEGP 로 줄을 숨길 때 **그룹을 먼저 숨기면 그 뒤 인덱스 조회가 어긋난다**(안 쓰는 정지점이 통째로 다 드러났다) — 자식 세 줄을 먼저 숨기고 그룹을 마지막에. ② 그룹은 **ECW 표시에만** 있다 — 스크립트에는 여전히 평평해서 `fx.property('Color 1')` 이 그대로 동작한다(한 단계 들어가면 오히려 안 된다).
 - `Alpha = Replace`(**기본값**) 는 그라데이션 불투명도를 over 합성 대신 출력 알파로 쓴다(`oa = (preserveAlpha?ba:1) * ga`).
 - Stops Bar: `PF_PUI_CONTROL` 체크박스 + Drawbot. 칩 클릭 → `PF_AppColorPickerDialog` → `uu.change_flags = PF_ChangeFlag_CHANGED_VALUE`. 커스텀 UI 를 쓰려면 `PF_OutFlag_CUSTOM_UI` 를 GlobalSetup 과 PiPL 에 둘 다 넣어야 한다(안 넣으면 "no custom ui outflag" 오류).
 - 버퍼 확장이 없으므로 `I_EXPAND_BUFFER` 없이 PiPL OutFlags = DEEP_COLOR_AWARE | SEND_UPDATE_PARAMS_UI (0x06000000).
+
+#### Fill Gaps (획 안쪽에 남는 구멍 메우기)
+- `BuildGapMask()`: 구멍 후보 = 알파 밖 + `sdf > center+half+0.5` → 4방향 연결성분 → 격자 테두리에 닿는 성분(바깥 배경)은 제외. 남은 성분의 안쪽 반지름 = `max(sdf) − (center+half)`, 지름이 `Gap Size` 보다 작으면 채운다. 별도 EDT 없이 기존 거리장만 쓴다.
+- 채운 지역은 배경 쪽으로만 `2 + ceil(softness)` 픽셀 넓혐 획과의 반투명 이음매를 덮는다. `alpha ≥ 0.5` 로는 넓히지 않는다 — 안 그러면 Inside 획에서 본체 위에 획 색이 번진다.
+- ⚠ Inside 획은 `bandHi ≤ 0` 이라 바깥 EDT 를 건너뛰어 구멍 크기를 재지 못한다 — `gapMode != Off` 이면 `bandHi` 를 최소 2 로 올린다.
+- 파라미터는 **맨 뒤에** 붙였다(그래야 기존 인스턴스의 값이 안 밀린다).
 
 ### BANG Cloner (`matchName "BANG Cloner"`, 카테고리 BANG)
 소스 레이어에 적용하는 인스턴스 클로너 — 입력의 현재 프레임을 premultiplied float 로 한 번 변환해 두고, 클론마다 출력에 over 합성(Motion Tile 모델). 파라미터(영문, v1.2 = 그룹 5개):

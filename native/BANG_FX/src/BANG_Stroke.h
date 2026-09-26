@@ -15,7 +15,7 @@
 #include "AE_EffectSuitesHelper.h"
 
 #define BANG_STROKE_MAJOR   1
-#define BANG_STROKE_MINOR   5
+#define BANG_STROKE_MINOR   6
 #define BANG_STROKE_BUG     0
 #define BANG_STROKE_STAGE   PF_Stage_DEVELOP
 #define BANG_STROKE_BUILD   1
@@ -58,8 +58,16 @@ enum {
     BS_ORDER,           //   Order: Stroke Behind | Stroke In Front (바깥 획에만 의미)
     BS_G_BODY_END,
 
+    // ⚠ 새 파라미터는 **끝에만** 붙인다 — 중간에 끼우면 기존 인스턴스의 값이 밀린다.
+    BS_G_FILL,          // ── Fill Gaps ──
+    BS_FILLGAP,         //   Fill Gaps: Off | Narrow Gaps | All Counters
+    BS_FILLGAP_SIZE,    //   Gap Size (px) — Narrow Gaps 일 때 '좁다' 의 기준(지름)
+    BS_G_FILL_END,
+
     BS_NUM_PARAMS
 };
+
+enum { BS_GAP_OFF = 1, BS_GAP_NARROW = 2, BS_GAP_ALL = 3 };
 
 enum { BS_POS_OUTSIDE = 1, BS_POS_CENTER = 2, BS_POS_INSIDE = 3 };
 enum { BS_CORNER_ROUND = 1, BS_CORNER_MITER = 2, BS_CORNER_BEVEL = 3 };
@@ -74,7 +82,8 @@ struct BS_PreRenderData {
     PF_LRect  in_rect;      // 체크아웃한 입력 영역 (레이어 좌표)
     PF_LRect  out_rect;     // result_rect (출력 world (0,0) 의 레이어 좌표)
     A_long    margin;       // 입력 요청 시 넓힌 여백
-    A_long    position, corner, fill, gradType, blend, body, order;
+    A_long    position, corner, fill, gradType, blend, body, order, gapMode;
+    PF_FpLong gapSize;
     PF_FpLong width, offset, softness, opacity, gradAngle, gradScale, bodyOpacity;
     PF_FpLong miterLimit, gradOpA, gradOpB;
     PF_FpLong bandLo, bandHi;   // 획이 닿는 거리 범위(부호 있는 거리) — 모서리 보정 범위 제한용

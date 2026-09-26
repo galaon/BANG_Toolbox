@@ -76,14 +76,14 @@ static void WriteStops(PF_ParamDef* params[], const BG_PresetStop* st, int n)
     params[BG_COUNT]->u.sd.value = n;
     params[BG_COUNT]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
     for (int i = 0; i < n; i++) {
-        params[BG_S1_COLOR + i * 3]->u.cd.value.red   = st[i].r;
-        params[BG_S1_COLOR + i * 3]->u.cd.value.green = st[i].g;
-        params[BG_S1_COLOR + i * 3]->u.cd.value.blue  = st[i].b;
-        params[BG_S1_COLOR + i * 3]->uu.change_flags  = PF_ChangeFlag_CHANGED_VALUE;
-        params[BG_S1_POS + i * 3]->u.fs_d.value = st[i].pos;
-        params[BG_S1_POS + i * 3]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
-        params[BG_S1_OP + i * 3]->u.fs_d.value = st[i].op;
-        params[BG_S1_OP + i * 3]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        params[BG_SC(i)]->u.cd.value.red   = st[i].r;
+        params[BG_SC(i)]->u.cd.value.green = st[i].g;
+        params[BG_SC(i)]->u.cd.value.blue  = st[i].b;
+        params[BG_SC(i)]->uu.change_flags  = PF_ChangeFlag_CHANGED_VALUE;
+        params[BG_SP(i)]->u.fs_d.value = st[i].pos;
+        params[BG_SP(i)]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        params[BG_SO(i)]->u.fs_d.value = st[i].op;
+        params[BG_SO(i)]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
     }
 }
 
@@ -151,13 +151,16 @@ static PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef*
     PF_ADD_BUTTON("", "Export...", 0, PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY, BG_EXPORT);
     for (int i = 0; i < BG_NUM_STOPS; i++) {
         char nm[32];
+        sprintf_s(nm, "Stop %d", i + 1);
+        TOPIC_CLOSED(nm, BG_SG(i));
         sprintf_s(nm, "Color %d", i + 1);
         AEFX_CLR_STRUCT(def);
-        PF_ADD_COLOR(nm, kDefault[i][0], kDefault[i][1], kDefault[i][2], BG_S1_COLOR + i * 3);
+        PF_ADD_COLOR(nm, kDefault[i][0], kDefault[i][1], kDefault[i][2], BG_SC(i));
         sprintf_s(nm, "Position %d", i + 1);
-        FSLIDER(nm, 0, 100, 0, 100, DefaultPos(i), PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, BG_S1_POS + i * 3);
+        FSLIDER(nm, 0, 100, 0, 100, DefaultPos(i), PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, BG_SP(i));
         sprintf_s(nm, "Opacity %d", i + 1);
-        FSLIDER(nm, 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BG_S1_OP + i * 3);
+        FSLIDER(nm, 0, 100, 0, 100, 100, PF_Precision_INTEGER, PF_ValueDisplayFlag_PERCENT, BG_SO(i));
+        TOPIC_END(BG_SGE(i));
     }
     TOPIC_END(BG_G_STOPS_END);
 
@@ -202,9 +205,11 @@ static void ApplyStopVisibility(PF_InData* in_data, int visible)
     if (suites.PFInterfaceSuite1()->AEGP_GetNewEffectForEffect(g_plugin_id, in_data->effect_ref, &meH) || !meH) return;
     for (int i = 0; i < BG_NUM_STOPS; i++) {
         const A_Boolean hide = (i < visible) ? FALSE : TRUE;
-        for (int k = 0; k < 3; k++) {
+        // 세 줄을 먼저 숨기고 그룹을 마지막에 — 그룹부터 숨기면 그 뒤 인덱스 조회가 어긋난다
+        const A_long ix[4] = { BG_SC(i), BG_SP(i), BG_SO(i), BG_SG(i) };
+        for (int k = 0; k < 4; k++) {
             AEGP_StreamRefH sH = NULL;
-            if (!suites.StreamSuite2()->AEGP_GetNewEffectStreamByIndex(g_plugin_id, meH, BG_S1_COLOR + i * 3 + k, &sH) && sH) {
+            if (!suites.StreamSuite2()->AEGP_GetNewEffectStreamByIndex(g_plugin_id, meH, ix[k], &sH) && sH) {
                 suites.DynamicStreamSuite2()->AEGP_SetDynamicStreamFlag(sH, AEGP_DynStreamFlag_HIDDEN, FALSE, hide);
                 suites.StreamSuite2()->AEGP_DisposeStream(sH);
             }
@@ -351,6 +356,7 @@ static PF_Err ImportExport(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef
     js += "var fx=null,par=L.property('ADBE Effect Parade');for(var e=1;e<=par.numProperties;e++)if(par.property(e).matchName==='BANG Gradient')fx=par.property(e);";
     js += "if(!fx)return 'nofx';";
     js += "var N=" + std::to_string(BG_NUM_STOPS) + ";";
+    // 정지점을 'Stop N' 그룹으로 묶었어도 **스크립트에는 평평하게** 보인다(그룹은 ECW 표시만) — 이름으로 바로 찾으면 된다
     js += "function C(i){return fx.property('Color '+i);}function P(i){return fx.property('Position '+i);}function O(i){return fx.property('Opacity '+i);}";
     if (!doImport) {
         js += "var f=File.saveDialog('Export gradient','CSS:*.css,GIMP gradient:*.ggr,JSON:*.json');if(!f)return 'cancel';";
@@ -418,25 +424,103 @@ static PF_Err ImportExport(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef
 static void OklabToLinear(float L, float a, float bb, float& r, float& g, float& b);
 static float LinearToSrgb(float c);
 
-// 색상환에서 기준 색을 하나 고르고 일정 간격으로 돌려 밝기·채도가 자연스럽게 흐르는 조합을 만든다.
-//  그냥 RGB 난수를 넣으면 진흑색이 섞여 지저분해진다 — OKLCh 기준이라 어느 조합이든 보기 좋다.
+// ── 무작위 그라데이션 ─────────────────────────
+//  '눈치내기’ 없이 탁한 색(어두운 노랑·주황 = 갈색, 회끜 도는 중간색)을 만들지 않도록 두 가지를 지킨다.
+//   ① **채널 클리핑 금지** — OKLCh 값을 sRGB 로 바꿀 때 범위를 넘으면 예전처럼 채널을 잘라버렸는데,
+//      그러면 색상이 틀어지고 채도가 빠져 바로 탁해진다. 이제는 그 밝기에서 sRGB 안에 들어오는
+//      최대 채도를 먼저 구해 그것의 비율로만 고른다(gamut-relative saturation).
+//   ② **색상마다 쓸 수 있는 밝기가 다르다** — 노랑의 cusp(가장 진해지는 밝기)는 L≈0.87,
+//      파랑은 L≈0.45. 노랑을 L 0.4 에 놓으면 그게 바로 갈색이다. 그래서 밝기를 cusp 주변으로 제한한다.
+//  (Wijffelaars 의 cusp 삼각형 + gamut-relative saturation — meodai/cusphanger 와 같은 접근)
+//  색상 배치는 유사색·넓은 스윙·보색·분할보색·삼색·단색조 여섯 가지에서 고른다.
+static bool BG_InGamut(float L, float a, float b)
+{
+    float r, g, bl;
+    OklabToLinear(L, a, b, r, g, bl);
+    const float e = 1e-4f;
+    return r >= -e && r <= 1.f + e && g >= -e && g <= 1.f + e && bl >= -e && bl <= 1.f + e;
+}
+
+// 그 밝기·색상에서 sRGB 안에 들어오는 최대 채도
+static float BG_MaxChroma(float L, float h)
+{
+    const float ch = std::cos(h), sh = std::sin(h);
+    float lo = 0.f, hi = 0.45f;
+    for (int k = 0; k < 18; k++) {
+        const float m = (lo + hi) * 0.5f;
+        if (BG_InGamut(L, m * ch, m * sh)) lo = m; else hi = m;
+    }
+    return lo;
+}
+
+// 그 색상이 가장 진해지는 밝기(cusp)
+static float BG_CuspL(float h)
+{
+    float bestL = 0.6f, bestC = 0.f;
+    for (int k = 1; k < 40; k++) {
+        const float L = k / 40.f;
+        const float c = BG_MaxChroma(L, h);
+        if (c > bestC) { bestC = c; bestL = L; }
+    }
+    return bestL;
+}
+
 static PF_Err Randomize(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[])
 {
     static uint32_t seed = 0x9E3779B9u;
     seed ^= (uint32_t)in_data->current_time * 2654435761u + 0x85EBCA77u;
     auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFFFFu) / 16777215.f; };
+    const float TAU = 6.2831853f, DEG = TAU / 360.f;
 
-    const int n = 2 + (int)(rnd() * 3.99f);                 // 2~5 개
-    const float h0 = rnd() * 6.2831853f;                    // 기준 색상
-    const float spread = (0.4f + rnd() * 1.6f) * ((rnd() < 0.5f) ? -1.f : 1.f);   // 유사색 ↔ 보색
-    const float L0 = 0.28f + rnd() * 0.25f, L1 = 0.68f + rnd() * 0.26f;
-    const float C0 = 0.06f + rnd() * 0.12f, C1 = 0.05f + rnd() * 0.14f;
+    const int n = 2 + (int)(rnd() * 3.99f);                  // 2~5 개
+    const float h0 = rnd() * TAU;                            // 기준 색상
+    const float dir = (rnd() < 0.5f) ? -1.f : 1.f;
+
+    const float pick = rnd();
+    int scheme;
+    if      (pick < 0.22f) scheme = 0;   // 유사색
+    else if (pick < 0.42f) scheme = 1;   // 넓은 스윙
+    else if (pick < 0.60f) scheme = 2;   // 보색
+    else if (pick < 0.75f) scheme = 3;   // 분할보색
+    else if (pick < 0.88f) scheme = 4;   // 삼색
+    else                   scheme = 5;   // 단색조
+    const float step  = (15.f + rnd() * 30.f) * DEG;
+    const float sweep = (120.f + rnd() * 180.f) * DEG;
+
+    float La = 0.30f + rnd() * 0.30f, Lb = 0.62f + rnd() * 0.33f;
+    if (rnd() < 0.5f) { const float t = La; La = Lb; Lb = t; }            // 밝은→어두운 방향도
+    const float sa = 0.58f + rnd() * 0.42f, sb = 0.58f + rnd() * 0.42f;   // 최대 채도 대비 비율
+    int neutral = 0;                                                      // 끝 정지점을 흰색/검정 쪽으로
+    if (rnd() < 0.18f) neutral = (rnd() < 0.5f) ? 1 : 2;
+
     BG_PresetStop st[BG_NUM_STOPS];
     for (int i = 0; i < n; i++) {
         const float u = (n > 1) ? (float)i / (n - 1) : 0.f;
-        const float L = L0 + (L1 - L0) * u, Cc = C0 + (C1 - C0) * u, hh = h0 + spread * u;
+        float h;
+        if      (scheme == 0) h = h0 + dir * step * i;
+        else if (scheme == 1) h = h0 + dir * sweep * u;
+        else if (scheme == 2) h = h0 + ((i & 1) ? 180.f * DEG : 0.f) + dir * 10.f * DEG * i;
+        else if (scheme == 3) { const int m = i % 3; h = h0 + ((m == 0) ? 0.f : (m == 1) ? 165.f * DEG : 195.f * DEG); }
+        else if (scheme == 4) h = h0 + dir * 120.f * DEG * (i % 3);
+        else                  h = h0 + dir * 8.f * DEG * i;
+
+        const float Lc = BG_CuspL(h);
+        float Lmin = std::max(0.12f, Lc - 0.34f);
+        // '똥색' 은 결국 **어두운 주황~노랑**(갈색·청동색·올리브)이다. OKLCh 로 h≈88° 를 중심으로 한
+        //  그 띠에서만 밝기 바닥을 크게 올린다 — 나머지 색상(짙은 남색·버건디·포레스트그린)은 그대로 둔다.
+        float hd = std::fmod(h * 180.f / 3.14159265f, 360.f);
+        if (hd < 0.f) hd += 360.f;
+        float dh = std::fabs(hd - 88.f);
+        if (dh > 180.f) dh = 360.f - dh;
+        const float k = (dh >= 85.f) ? 0.f : 0.5f * (1.f + std::cos(3.14159265f * dh / 85.f));
+        if (k > 0.15f) Lmin = std::max(Lmin, 0.30f + 0.56f * k);
+        const float Lmax = std::min(0.97f, Lc + 0.42f);
+        float L = std::min(std::max(La + (Lb - La) * u, Lmin), Lmax);
+        float C = (sa + (sb - sa) * u) * BG_MaxChroma(L, h);
+        if (neutral && i == n - 1) { L = (neutral == 1) ? 0.96f : 0.12f; C = 0.012f; }
+
         float lr, lg, lb;
-        OklabToLinear(L, Cc * std::cos(hh), Cc * std::sin(hh), lr, lg, lb);
+        OklabToLinear(L, C * std::cos(h), C * std::sin(h), lr, lg, lb);
         st[i].pos = u * 100.f;
         st[i].r = (A_u_char)(std::min(1.f, std::max(0.f, LinearToSrgb(std::min(1.f, std::max(0.f, lr))))) * 255.f + 0.5f);
         st[i].g = (A_u_char)(std::min(1.f, std::max(0.f, LinearToSrgb(std::min(1.f, std::max(0.f, lg))))) * 255.f + 0.5f);
@@ -473,7 +557,7 @@ static PF_Err UserChangedParam(PF_InData* in_data, PF_OutData* out_data, PF_Para
         // 기본값 범위에서 잘려 보이고, 사용자가 매번 손으로 숫자를 넣어야 한다.
         const int n = std::min(BG_NUM_STOPS, std::max(2, (int)params[BG_COUNT]->u.sd.value));
         for (int i = 0; i < n; i++) {
-            PF_ParamDef* pd = params[BG_S1_POS + i * 3];
+            PF_ParamDef* pd = params[BG_SP(i)];
             pd->u.fs_d.value = i * 100.0 / (n - 1);
             pd->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
         }
@@ -576,7 +660,7 @@ static int BarChips(const PF_ParamDef* const* params, const PF_Rect& fr, BarChip
     const float w = std::max(8.f, x1 - x0 - kBarChip);
     int n = 0;
     for (int i = 0; i < count && n < maxN; i++) {
-        const float pos = (float)(params[BG_S1_POS + i * 3]->u.fs_d.value / 100.0);
+        const float pos = (float)(params[BG_SP(i)]->u.fs_d.value / 100.0);
         BarChip c;
         c.w = c.h = (float)kBarChip;
         c.x = x0 + std::min(1.f, std::max(0.f, pos)) * w;
@@ -596,9 +680,9 @@ static RGB BarColorAt(const PF_ParamDef* const* params, float t, float* outOp)
     float pos[BG_NUM_STOPS], opa[BG_NUM_STOPS]; RGB col[BG_NUM_STOPS];
     int idx[BG_NUM_STOPS];
     for (int i = 0; i < n; i++) {
-        pos[i] = (float)(params[BG_S1_POS + i * 3]->u.fs_d.value / 100.0);
-        opa[i] = (float)(params[BG_S1_OP + i * 3]->u.fs_d.value / 100.0);
-        const PF_Pixel& c = params[BG_S1_COLOR + i * 3]->u.cd.value;
+        pos[i] = (float)(params[BG_SP(i)]->u.fs_d.value / 100.0);
+        opa[i] = (float)(params[BG_SO(i)]->u.fs_d.value / 100.0);
+        const PF_Pixel& c = params[BG_SC(i)]->u.cd.value;
         col[i] = { c.red / 255.f, c.green / 255.f, c.blue / 255.f };
         idx[i] = i;
     }
@@ -675,8 +759,8 @@ static PF_Err BarDraw(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* par
         BarChip chips[BG_NUM_STOPS];
         const int n = BarChips(params, fr, chips, BG_NUM_STOPS);
         for (int i = 0; i < n && !err; i++) {
-            const PF_Pixel& pc = params[BG_S1_COLOR + chips[i].stop * 3]->u.cd.value;
-            const float cop = (float)(params[BG_S1_OP + chips[i].stop * 3]->u.fs_d.value / 100.0);
+            const PF_Pixel& pc = params[BG_SC(chips[i].stop)]->u.cd.value;
+            const float cop = (float)(params[BG_SO(chips[i].stop)]->u.fs_d.value / 100.0);
             // 칩 뒤에도 체크무늬 — 불투명도 0 에 가까울수록 투명하게 보인다
             for (int q = 0; q < 4 && !err; q++) {
                 const float hw = chips[i].w * 0.5f, hh = chips[i].h * 0.5f;
@@ -745,7 +829,7 @@ static PF_Err BarClick(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* pa
         if (pt.h >= bx && pt.h < bx + bw && pt.v >= by && pt.v < by + bh) {
             const int cnt = std::min(BG_NUM_STOPS, std::max(2, (int)params[BG_COUNT]->u.sd.value));
             for (int i = 0; i < cnt; i++) {
-                PF_ParamDef* pp = params[BG_S1_POS + i * 3];
+                PF_ParamDef* pp = params[BG_SP(i)];
                 pp->u.fs_d.value = 100.0 - pp->u.fs_d.value;
                 pp->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
             }
@@ -771,14 +855,14 @@ static PF_Err BarClick(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* pa
             float op0 = 1.f;
             const RGB c = BarColorAt(params, params[BG_REVERSE]->u.bd.value ? 1.f - t : t, &op0);
             const int i = cnt;                      // 맨 뒤에 붙여도 렌더·띄가 위치순으로 정렬한다
-            params[BG_S1_COLOR + i * 3]->u.cd.value.red   = (A_u_char)(std::min(1.f, std::max(0.f, c.r)) * 255.f + 0.5f);
-            params[BG_S1_COLOR + i * 3]->u.cd.value.green = (A_u_char)(std::min(1.f, std::max(0.f, c.g)) * 255.f + 0.5f);
-            params[BG_S1_COLOR + i * 3]->u.cd.value.blue  = (A_u_char)(std::min(1.f, std::max(0.f, c.b)) * 255.f + 0.5f);
-            params[BG_S1_COLOR + i * 3]->uu.change_flags  = PF_ChangeFlag_CHANGED_VALUE;
-            params[BG_S1_POS + i * 3]->u.fs_d.value = t * 100.0;
-            params[BG_S1_POS + i * 3]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
-            params[BG_S1_OP + i * 3]->u.fs_d.value = op0 * 100.0;
-            params[BG_S1_OP + i * 3]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+            params[BG_SC(i)]->u.cd.value.red   = (A_u_char)(std::min(1.f, std::max(0.f, c.r)) * 255.f + 0.5f);
+            params[BG_SC(i)]->u.cd.value.green = (A_u_char)(std::min(1.f, std::max(0.f, c.g)) * 255.f + 0.5f);
+            params[BG_SC(i)]->u.cd.value.blue  = (A_u_char)(std::min(1.f, std::max(0.f, c.b)) * 255.f + 0.5f);
+            params[BG_SC(i)]->uu.change_flags  = PF_ChangeFlag_CHANGED_VALUE;
+            params[BG_SP(i)]->u.fs_d.value = t * 100.0;
+            params[BG_SP(i)]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+            params[BG_SO(i)]->u.fs_d.value = op0 * 100.0;
+            params[BG_SO(i)]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
             params[BG_COUNT]->u.sd.value = cnt + 1;
             params[BG_COUNT]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
             g_barEdit = true;                       // 위치 재분배로 덮어쓰지 않게
@@ -793,7 +877,7 @@ static PF_Err BarClick(PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* pa
         const BarChip& c = chips[i];
         if (pt.h < c.x || pt.h >= c.x + c.w || pt.v < c.y || pt.v >= c.y + c.h) continue;
         AEGP_SuiteHandler suites(in_data->pica_basicP);
-        const int idx = BG_S1_COLOR + c.stop * 3;
+        const int idx = BG_SC(c.stop);
         const PF_Pixel& cur = params[idx]->u.cd.value;
         PF_PixelFloat in = { 1.f, cur.red / 255.f, cur.green / 255.f, cur.blue / 255.f }, outc = in;
         char title[64]; snprintf(title, sizeof title, "Color %d", c.stop + 1);
@@ -895,10 +979,10 @@ static PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderEx
     CHK(BG_AMOUNT);         d->amount      = pd.u.fs_d.value / 100.0;
     CHK(BG_PRESERVE_ALPHA); d->preserveAlpha = pd.u.bd.value != 0;
     for (int i = 0; i < BG_NUM_STOPS; i++) {
-        CHK(BG_S1_COLOR + i * 3);
+        CHK(BG_SC(i));
         d->stops[i].r = pd.u.cd.value.red / 255.0; d->stops[i].g = pd.u.cd.value.green / 255.0; d->stops[i].b = pd.u.cd.value.blue / 255.0;
-        CHK(BG_S1_POS + i * 3);   d->stops[i].pos     = pd.u.fs_d.value / 100.0;
-        CHK(BG_S1_OP  + i * 3);   d->stops[i].opacity = pd.u.fs_d.value / 100.0;
+        CHK(BG_SP(i));   d->stops[i].pos     = pd.u.fs_d.value / 100.0;
+        CHK(BG_SO(i));   d->stops[i].opacity = pd.u.fs_d.value / 100.0;
     }
     #undef CHK
     if (err) { delete d; return err; }
